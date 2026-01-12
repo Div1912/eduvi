@@ -11,6 +11,7 @@ export type UserRole = "student" | "issuer" | "verifier" | "admin"
 
 interface Profile {
   id: string
+  user_id: string
   wallet_address: string
   role: UserRole
   display_name: string | null
@@ -53,13 +54,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { data, error } = await supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle()
 
       if (error) {
-        console.error("Error fetching profile:", error)
+        console.error("[v0] Error fetching profile:", error)
         return null
       }
 
       return data as Profile | null
     } catch (err) {
-      console.error("Profile fetch error:", err)
+      console.error("[v0] Profile fetch error:", err)
       return null
     }
   }
@@ -69,13 +70,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId)
 
       if (error) {
-        console.error("Error fetching roles:", error)
+        console.error("[v0] Error fetching roles:", error)
         return []
       }
 
       return (data || []).map((r) => r.role as UserRole)
     } catch (err) {
-      console.error("Roles fetch error:", err)
+      console.error("[v0] Roles fetch error:", err)
       return []
     }
   }
@@ -129,7 +130,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setRoles([])
       setError(null)
     } catch (err) {
-      console.error("Sign out error:", err)
+      console.error("[v0] Sign out error:", err)
     } finally {
       setIsLoading(false)
     }
@@ -140,17 +141,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
 
   const needsOnboarding = (): boolean => {
-    if (!user) {
-      return false
+    if (!user || !profile) {
+      return true
     }
-
-    // User needs onboarding if profile doesn't exist or onboarded is false
-    return !profile || !profile.onboarded
+    return !profile.onboarded
   }
 
   const onboardingComplete = async () => {
-    if (!user) {
-      throw new Error("No authenticated user")
+    if (!user || !profile) {
+      throw new Error("No authenticated user or profile")
     }
 
     try {
@@ -159,11 +158,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (error) throw error
 
       // Update local profile state
-      if (profile) {
-        setProfile({ ...profile, onboarded: true })
-      }
+      setProfile({ ...profile, onboarded: true })
     } catch (err) {
-      console.error("Failed to mark onboarding complete:", err)
+      console.error("[v0] Failed to mark onboarding complete:", err)
       throw err
     }
   }
@@ -173,7 +170,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const initializeAuth = async () => {
       try {
-        // First, try to restore session from localStorage
         const {
           data: { session: restoredSession },
         } = await supabase.auth.getSession()
@@ -186,7 +182,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         setIsLoading(false)
       } catch (err) {
-        console.error("Auth initialization error:", err)
+        console.error("[v0] Auth initialization error:", err)
         setIsLoading(false)
       }
     }
@@ -194,7 +190,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Initialize on mount
     initializeAuth()
 
-    // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
