@@ -112,13 +112,16 @@ const SignInPage = () => {
                   <GraduationCap className="w-8 h-8 text-white" />
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-bold mb-2">
-                  Sign in to <span className="gradient-text">EduVerify</span>
+                  Welcome to <span className="gradient-text">EduVerify</span>
                 </h1>
                 <p className="text-muted-foreground">
                   {authStep === 'connected' 
                     ? 'Sign the message to verify wallet ownership'
-                    : 'Connect your wallet to access the platform'
+                    : 'Connect your wallet to sign in or create an account'
                   }
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  New users will select their role after authentication
                 </p>
               </div>
 

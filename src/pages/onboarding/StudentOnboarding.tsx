@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import Navbar from '@/components/Navbar';
+import PublicNavbar from '@/components/PublicNavbar';
 
 const StudentOnboarding = () => {
   const navigate = useNavigate();
@@ -62,7 +62,7 @@ const StudentOnboarding = () => {
 
       await refreshProfile();
       toast.success('Welcome to EduVerify!');
-      navigate('/student/dashboard');
+      navigate('/dashboard/student');
     } catch (error) {
       console.error('Onboarding error:', error);
       toast.error('Failed to complete onboarding. Please try again.');
@@ -73,7 +73,7 @@ const StudentOnboarding = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
+      <PublicNavbar />
       
       <main className="flex-1 flex items-center justify-center pt-20 pb-16 px-4">
         <div className="hero-glow" />

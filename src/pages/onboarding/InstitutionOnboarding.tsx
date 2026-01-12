@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import Navbar from '@/components/Navbar';
+import PublicNavbar from '@/components/PublicNavbar';
 
 const InstitutionOnboarding = () => {
   const navigate = useNavigate();
@@ -64,7 +64,7 @@ const InstitutionOnboarding = () => {
 
       await refreshProfile();
       toast.success('Institution registered successfully!');
-      navigate('/issuer/dashboard');
+      navigate('/dashboard/institution');
     } catch (error) {
       console.error('Onboarding error:', error);
       toast.error('Failed to complete registration. Please try again.');
@@ -75,7 +75,7 @@ const InstitutionOnboarding = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
+      <PublicNavbar />
       
       <main className="flex-1 flex items-center justify-center pt-20 pb-16 px-4">
         <div className="hero-glow" />
