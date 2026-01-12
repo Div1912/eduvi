@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import Navbar from '@/components/Navbar';
+import PublicNavbar from '@/components/PublicNavbar';
 
 const VerifierOnboarding = () => {
   const navigate = useNavigate();
@@ -54,7 +54,7 @@ const VerifierOnboarding = () => {
 
       await refreshProfile();
       toast.success('Verifier account created!');
-      navigate('/verify');
+      navigate('/dashboard/verifier');
     } catch (error) {
       console.error('Onboarding error:', error);
       toast.error('Failed to complete setup. Please try again.');
@@ -65,7 +65,7 @@ const VerifierOnboarding = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
+      <PublicNavbar />
       
       <main className="flex-1 flex items-center justify-center pt-20 pb-16 px-4">
         <div className="hero-glow" />
