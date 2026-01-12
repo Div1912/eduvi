@@ -55,7 +55,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .from('profiles')
         .select('*')
         .eq('user_id', userId)
-        .maybeSingle(); // ✅ FIX: allow "no profile" without error
+        .maybeSingle(); // allow no profile for first-time users
 
       if (error) {
         console.error('Error fetching profile:', error);
@@ -97,7 +97,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
-    setIsLoading(true);
     setError(null);
 
     try {
@@ -110,8 +109,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setRoles(rolesData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -153,7 +150,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // ---------------- ROLE CHECK ----------------
   const hasRole = (role: UserRole): boolean => {
-    return profile?.role === role; // ✅ FIX: single source of truth
+    return profile?.role === role;
   };
 
   // ---------------- AUTH STATE LISTENER ----------------
@@ -170,8 +167,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
 
-        // ✅ FIX: load profile ONCE, explicitly
         await refreshProfile();
+        setIsLoading(false);
       }
     );
 
