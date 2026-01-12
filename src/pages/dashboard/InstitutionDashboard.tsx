@@ -13,7 +13,8 @@ import {
   Search,
   CheckCircle,
   TrendingUp,
-  FileX
+  FileX,
+  Settings
 } from 'lucide-react';
 import DashboardNavbar from '@/components/DashboardNavbar';
 
@@ -97,13 +98,22 @@ const InstitutionDashboard = () => {
                   {wallet.address ? formatAddress(wallet.address) : ''} • Issue and manage credentials
                 </p>
               </div>
-              <Link
-                to="/dashboard/institution/issue"
-                className="btn-primary w-full sm:w-auto"
-              >
-                <Plus className="w-5 h-5" />
-                Issue Credential
-              </Link>
+              <div className="flex gap-3">
+                <Link
+                  to="/settings"
+                  className="btn-secondary"
+                >
+                  <Settings className="w-5 h-5" />
+                  Settings
+                </Link>
+                <Link
+                  to="/dashboard/institution/issue"
+                  className="btn-primary"
+                >
+                  <Plus className="w-5 h-5" />
+                  Issue Credential
+                </Link>
+              </div>
             </div>
           </motion.div>
 

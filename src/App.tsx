@@ -28,7 +28,7 @@ import Settings from "./pages/Settings";
 // Legacy pages (for existing routes)
 import StudentCredentials from "./pages/student/Credentials";
 import ResumeBuilder from "./pages/student/ResumeBuilder";
-import IssueCredential from "./pages/issuer/IssueCredential";
+import IssueCredential from "./pages/dashboard/IssueCredential";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminUsers from "./pages/admin/Users";
 import AdminInstitutions from "./pages/admin/Institutions";

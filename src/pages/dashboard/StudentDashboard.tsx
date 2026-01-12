@@ -16,7 +16,8 @@ import {
   Sparkles,
   FolderOpen,
   FileX,
-  LinkIcon
+  LinkIcon,
+  Settings
 } from 'lucide-react';
 import DashboardNavbar from '@/components/DashboardNavbar';
 import { getSafeIPFSUrl } from '@/lib/ipfsUtils';
@@ -93,6 +94,10 @@ const StudentDashboard = () => {
                   {wallet.address ? formatAddress(wallet.address) : ''} • Manage your academic credentials
                 </p>
               </div>
+              <Link to="/settings" className="btn-secondary">
+                <Settings className="w-5 h-5" />
+                Settings
+              </Link>
             </div>
           </motion.div>
 
