@@ -29,6 +29,7 @@ interface AuthContextType {
   profile: Profile | null
   roles: UserRole[]
   isLoading: boolean
+  isAuthenticating: boolean
   profileLoaded: boolean
   isOnboarded: boolean
   authenticateWallet: (walletAddress: string) => Promise<void>
@@ -47,18 +48,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [roles, setRoles] = useState<UserRole[]>([])
 
   const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [profileLoaded, setProfileLoaded] = useState(false)
 
-  /* --------------------------------------------------
-   * PROFILE FETCH
-   * -------------------------------------------------- */
+  /* ---------------- PROFILE FETCH ---------------- */
+
   const refreshProfile = async () => {
-    if (!user) {
-      setProfile(null)
-      setRoles([])
-      setProfileLoaded(true)
-      return
-    }
+    if (!user || !session) return
 
     setProfileLoaded(false)
 
@@ -83,21 +79,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }
 
-  /* --------------------------------------------------
-   * WALLET AUTH
-   * -------------------------------------------------- */
-  const authenticateWallet = async (walletAddress: string) => {
-    if (!walletAddress) {
-      throw new Error("Wallet address missing")
-    }
+  /* ---------------- WALLET AUTH ---------------- */
 
-    await authenticateWithWallet(walletAddress)
-    // Supabase session will be set by auth listener
+  const authenticateWallet = async (walletAddress: string) => {
+    if (!walletAddress) throw new Error("Wallet address missing")
+
+    setIsAuthenticating(true)
+    try {
+      await authenticateWithWallet(walletAddress)
+      // auth listener will update session + user
+    } finally {
+      setIsAuthenticating(false)
+    }
   }
 
-  /* --------------------------------------------------
-   * AUTH LIFECYCLE
-   * -------------------------------------------------- */
+  /* ---------------- AUTH LIFECYCLE ---------------- */
+
   useEffect(() => {
     let mounted = true
 
@@ -132,14 +129,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [])
 
   useEffect(() => {
-    if (!isLoading && user) {
+    if (!isLoading && user && session) {
       refreshProfile()
     }
-  }, [user, isLoading])
+  }, [user, session, isLoading])
 
-  /* --------------------------------------------------
-   * HELPERS
-   * -------------------------------------------------- */
+  /* ---------------- HELPERS ---------------- */
+
   const signOut = async () => {
     await supabase.auth.signOut()
     setUser(null)
@@ -160,6 +156,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         profile,
         roles,
         isLoading,
+        isAuthenticating,
         profileLoaded,
         isOnboarded,
         authenticateWallet,
