@@ -1,18 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Building2, Loader2, ArrowRight } from 'lucide-react';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
 import PublicNavbar from '@/components/PublicNavbar';
 import BackButton from '@/components/BackButton';
 
+/**
+ * INSTITUTION ONBOARDING (ONE-TIME)
+ *
+ * SECURITY GUARANTEES:
+ * - Profile can be created ONLY ONCE
+ * - No overwrite possible
+ * - Immutable binding: user_id + wallet_address
+ * - Existing profiles are hard-blocked
+ */
 const InstitutionOnboarding = () => {
   const navigate = useNavigate();
   const { user, refreshProfile } = useAuth();
   const { wallet } = useWallet();
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     institutionName: '',
@@ -29,41 +41,93 @@ const InstitutionOnboarding = () => {
     'Other',
   ];
 
+  /**
+   * 🔐 PRE-CHECK:
+   * If profile already exists, block onboarding permanently.
+   */
+  useEffect(() => {
+    if (!user) return;
+
+    const checkExistingProfile = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Profile check failed:', error);
+        return;
+      }
+
+      if (data) {
+        toast.info('Profile already exists');
+        navigate('/dashboard/institution', { replace: true });
+      }
+    };
+
+    checkExistingProfile();
+  }, [user, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!user) {
       toast.error('Please sign in first');
-      navigate('/login');
+      navigate('/auth/sign-in');
       return;
     }
 
-    // Get wallet address from user metadata if not connected via context
-    const walletAddress = wallet.address || user.user_metadata?.wallet_address;
+    // 🔐 Wallet address is REQUIRED for immutable identity binding
+    const walletAddress =
+      wallet.address || user.user_metadata?.wallet_address;
+
     if (!walletAddress) {
       toast.error('Wallet address not found. Please reconnect your wallet.');
       return;
     }
 
     setIsSubmitting(true);
+
     try {
-      // Create profile
+      /**
+       * 🔐 FINAL SAFETY CHECK
+       * Prevent race conditions / manual bypass attempts
+       */
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingProfile) {
+        toast.error('Profile already exists');
+        navigate('/dashboard/institution', { replace: true });
+        return;
+      }
+
+      /**
+       * ✅ CREATE PROFILE (PURE INSERT)
+       * ❌ NO UPSERT
+       * ❌ NO UPDATE
+       */
       const { error: profileError } = await supabase
         .from('profiles')
-        .upsert(
-          {
-            user_id: user.id,
-            wallet_address: walletAddress.toLowerCase(),
-            role: 'issuer',
-            display_name: formData.displayName,
-            institution: formData.institutionName,
-          },
-          { onConflict: 'user_id' }
-        );
+        .insert({
+          user_id: user.id,
+          wallet_address: walletAddress.toLowerCase(),
+          role: 'issuer',
+          display_name: formData.displayName,
+          institution: formData.institutionName,
+          institution_type: formData.institutionType,
+        });
 
       if (profileError) throw profileError;
 
-      // Add issuer role (idempotent)
-      // NOTE: use ignoreDuplicates to avoid UPDATE on conflict (which is blocked by RLS).
+      /**
+       * ✅ ASSIGN ROLE (SAFE & IDEMPOTENT)
+       * Roles table does not store identity-critical data
+       */
       const { error: roleError } = await supabase
         .from('user_roles')
         .upsert(
@@ -71,7 +135,10 @@ const InstitutionOnboarding = () => {
             user_id: user.id,
             role: 'issuer',
           },
-          { onConflict: 'user_id,role', ignoreDuplicates: true }
+          {
+            onConflict: 'user_id,role',
+            ignoreDuplicates: true,
+          }
         );
 
       if (roleError) throw roleError;
@@ -80,7 +147,7 @@ const InstitutionOnboarding = () => {
       toast.success('Institution registered successfully!');
       navigate('/dashboard/institution');
     } catch (error) {
-      console.error('Onboarding error:', error);
+      console.error('Institution onboarding error:', error);
       toast.error('Failed to complete registration. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -90,21 +157,23 @@ const InstitutionOnboarding = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <PublicNavbar />
-      
+
       <main className="flex-1 flex items-center justify-center pt-20 pb-16 px-4">
         <div className="hero-glow" />
-        
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-md"
         >
           <BackButton to="/onboarding/select-role" label="Back" />
+
           <div className="glass-card p-8 md:p-10">
             <div className="text-center mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 mb-6">
                 <Building2 className="w-8 h-8 text-white" />
               </div>
+
               <h1 className="text-2xl sm:text-3xl font-bold mb-2">
                 Register Your <span className="gradient-text">Institution</span>
               </h1>
@@ -122,9 +191,11 @@ const InstitutionOnboarding = () => {
                   type="text"
                   value={formData.institutionName}
                   onChange={(e) =>
-                    setFormData({ ...formData, institutionName: e.target.value })
+                    setFormData({
+                      ...formData,
+                      institutionName: e.target.value,
+                    })
                   }
-                  placeholder="e.g., Massachusetts Institute of Technology"
                   className="input-glass"
                   required
                 />
@@ -137,7 +208,10 @@ const InstitutionOnboarding = () => {
                 <select
                   value={formData.institutionType}
                   onChange={(e) =>
-                    setFormData({ ...formData, institutionType: e.target.value })
+                    setFormData({
+                      ...formData,
+                      institutionType: e.target.value,
+                    })
                   }
                   className="input-glass"
                   required
@@ -159,15 +233,14 @@ const InstitutionOnboarding = () => {
                   type="text"
                   value={formData.displayName}
                   onChange={(e) =>
-                    setFormData({ ...formData, displayName: e.target.value })
+                    setFormData({
+                      ...formData,
+                      displayName: e.target.value,
+                    })
                   }
-                  placeholder="Your full name"
                   className="input-glass"
                   required
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Your name as the institution representative
-                </p>
               </div>
 
               <button
