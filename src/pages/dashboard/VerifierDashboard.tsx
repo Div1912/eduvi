@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, Shield, FileCheck, History, ExternalLink } from 'lucide-react';
+import { Search, Shield, FileCheck, History, ExternalLink, Settings } from 'lucide-react';
 import DashboardNavbar from '@/components/DashboardNavbar';
 
 const VerifierDashboard = () => {
@@ -17,14 +17,22 @@ const VerifierDashboard = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-8 text-center"
+            className="mb-8"
           >
-            <h1 className="text-2xl sm:text-3xl font-bold mb-2">
-              Welcome, <span className="gradient-text">{profile?.display_name || 'Verifier'}</span>
-            </h1>
-            <p className="text-muted-foreground">
-              Verify academic credentials instantly with blockchain-backed verification
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="text-center sm:text-left">
+                <h1 className="text-2xl sm:text-3xl font-bold mb-2">
+                  Welcome, <span className="gradient-text">{profile?.display_name || 'Verifier'}</span>
+                </h1>
+                <p className="text-muted-foreground">
+                  Verify academic credentials instantly with blockchain-backed verification
+                </p>
+              </div>
+              <Link to="/settings" className="btn-secondary mx-auto sm:mx-0">
+                <Settings className="w-5 h-5" />
+                Settings
+              </Link>
+            </div>
           </motion.div>
 
           {/* Main Verification Card */}
