@@ -1,14 +1,28 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { GraduationCap, Building2, Search, Shield, ArrowRight, Lock } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { GraduationCap, Building2, Search, Shield, ArrowRight, Lock, AlertCircle } from 'lucide-react';
 import { useAuth, UserRole } from '@/contexts/AuthContext';
 import Navbar from '@/components/Navbar';
 import BackButton from '@/components/BackButton';
 
 const RoleSelectPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, roles, hasRole, isLoading } = useAuth();
+  const [showUnauthorizedAlert, setShowUnauthorizedAlert] = useState(false);
+  const [requiredRole, setRequiredRole] = useState<string | null>(null);
+
+  // Check if redirected from unauthorized access
+  useEffect(() => {
+    const state = location.state as { unauthorized?: boolean; requiredRole?: string } | null;
+    if (state?.unauthorized) {
+      setShowUnauthorizedAlert(true);
+      setRequiredRole(state.requiredRole || null);
+      // Clear the state to prevent showing the alert on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   const roleConfigs = [
     {
@@ -78,6 +92,25 @@ const RoleSelectPage = () => {
         
         <div className="w-full max-w-4xl mx-auto">
           <BackButton to="/login" label="Back to Login" />
+          
+          {/* Unauthorized access alert */}
+          {showUnauthorizedAlert && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/30 mb-6"
+            >
+              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-destructive">Access Denied</p>
+                <p className="text-sm text-muted-foreground">
+                  You don't have permission to access {requiredRole ? `the ${requiredRole} area` : 'that page'}. 
+                  Please select a role you're authorized for or contact an administrator.
+                </p>
+              </div>
+            </motion.div>
+          )}
+          
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { AuthProvider } from "@/contexts/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Verify from "./pages/Verify";
 import Login from "./pages/Login";
@@ -32,21 +33,72 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <Routes>
+              {/* Public routes */}
               <Route path="/" element={<Index />} />
               <Route path="/verify" element={<Verify />} />
               <Route path="/login" element={<Login />} />
               <Route path="/role-select" element={<RoleSelect />} />
               <Route path="/dashboard" element={<RoleSelect />} />
-              <Route path="/student/dashboard" element={<StudentDashboard />} />
-              <Route path="/student/credentials" element={<StudentCredentials />} />
-              <Route path="/student/resume-builder" element={<ResumeBuilder />} />
-              <Route path="/issuer/dashboard" element={<IssuerDashboard />} />
-              <Route path="/issuer/issue" element={<IssueCredential />} />
-              <Route path="/verifier/dashboard" element={<VerifierDashboard />} />
-              <Route path="/admin/dashboard" element={<AdminDashboard />} />
-              <Route path="/admin/users" element={<AdminUsers />} />
-              <Route path="/admin/institutions" element={<AdminInstitutions />} />
-              <Route path="/admin/settings" element={<AdminSettings />} />
+              
+              {/* Student routes - require student role or allow demo */}
+              <Route path="/student/dashboard" element={
+                <ProtectedRoute requiredRole="student" allowDemo>
+                  <StudentDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/student/credentials" element={
+                <ProtectedRoute requiredRole="student" allowDemo>
+                  <StudentCredentials />
+                </ProtectedRoute>
+              } />
+              <Route path="/student/resume-builder" element={
+                <ProtectedRoute requiredRole="student" allowDemo>
+                  <ResumeBuilder />
+                </ProtectedRoute>
+              } />
+              
+              {/* Issuer routes - require issuer role */}
+              <Route path="/issuer/dashboard" element={
+                <ProtectedRoute requiredRole="issuer">
+                  <IssuerDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/issuer/issue" element={
+                <ProtectedRoute requiredRole="issuer">
+                  <IssueCredential />
+                </ProtectedRoute>
+              } />
+              
+              {/* Verifier routes - require verifier role */}
+              <Route path="/verifier/dashboard" element={
+                <ProtectedRoute requiredRole="verifier">
+                  <VerifierDashboard />
+                </ProtectedRoute>
+              } />
+              
+              {/* Admin routes - require admin role */}
+              <Route path="/admin/dashboard" element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/users" element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminUsers />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/institutions" element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminInstitutions />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/settings" element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminSettings />
+                </ProtectedRoute>
+              } />
+              
+              {/* 404 */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
