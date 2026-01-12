@@ -2,10 +2,12 @@ import { supabase } from '@/integrations/supabase/client';
 
 const WALLET_AUTH_URL = 'https://iagnculfrgjpkjlihvem.supabase.co/functions/v1/wallet-auth';
 
-interface NonceResponse {
-  nonce: string;
-  message: string;
-}
+// IMPORTANT: This message MUST be identical to the backend message.
+export const WALLET_SIGN_MESSAGE =
+  'EduVerify login: Sign this message to verify wallet ownership' as const;
+
+const FRIENDLY_VERIFY_ERROR =
+  'Wallet verification failed. Please reconnect your wallet and try again.';
 
 interface VerifyResponse {
   success: boolean;
@@ -18,73 +20,70 @@ interface VerifyResponse {
   verification_url: string;
 }
 
-/**
- * Request a nonce for wallet signature authentication
- */
-export async function requestNonce(walletAddress: string): Promise<NonceResponse> {
-  const response = await fetch(`${WALLET_AUTH_URL}/nonce`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ wallet_address: walletAddress }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to request nonce');
-  }
-
-  return response.json();
+function toFriendlyAuthError(): Error {
+  return new Error(FRIENDLY_VERIFY_ERROR);
 }
 
 /**
- * Sign a message using MetaMask
+ * Sign the fixed login message using MetaMask (personal_sign).
+ * Ensures we sign with the currently connected wallet address.
  */
-export async function signMessage(message: string): Promise<string> {
+export async function signLoginMessage(connectedWalletAddress: string): Promise<{
+  signature: string;
+  message: typeof WALLET_SIGN_MESSAGE;
+  wallet_address: string;
+}> {
   if (!window.ethereum) {
+    // This is user-facing and actionable.
     throw new Error('MetaMask is not installed');
   }
 
-  const accounts = await window.ethereum.request({
+  const accounts = (await window.ethereum.request({
     method: 'eth_requestAccounts',
-  }) as string[];
+  })) as string[];
 
-  if (!accounts || accounts.length === 0) {
-    throw new Error('No accounts available');
+  const activeAddress = accounts?.[0];
+
+  if (!activeAddress) {
+    throw toFriendlyAuthError();
   }
 
-  const signature = await window.ethereum.request({
-    method: 'personal_sign',
-    params: [message, accounts[0]],
-  }) as string;
+  // Ensure we sign with the address the app considers "connected".
+  if (activeAddress.toLowerCase() !== connectedWalletAddress.toLowerCase()) {
+    throw toFriendlyAuthError();
+  }
 
-  return signature;
+  const signature = (await window.ethereum.request({
+    method: 'personal_sign',
+    params: [WALLET_SIGN_MESSAGE, activeAddress],
+  })) as string;
+
+  return {
+    signature,
+    message: WALLET_SIGN_MESSAGE,
+    wallet_address: activeAddress,
+  };
 }
 
 /**
- * Verify signature and create Supabase session
+ * Verify signature via the wallet-auth edge function.
  */
-export async function verifySignature(
-  walletAddress: string,
-  signature: string,
-  nonce: string
-): Promise<VerifyResponse> {
+export async function verifySignature(payload: {
+  wallet_address: string;
+  signature: string;
+  message: typeof WALLET_SIGN_MESSAGE;
+}): Promise<VerifyResponse> {
   const response = await fetch(`${WALLET_AUTH_URL}/verify`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      wallet_address: walletAddress,
-      signature,
-      nonce,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to verify signature');
+    // Never surface backend technical details to end-users for auth.
+    throw toFriendlyAuthError();
   }
 
   return response.json();
@@ -93,46 +92,28 @@ export async function verifySignature(
 /**
  * Complete wallet authentication flow
  */
-export async function authenticateWithWallet(walletAddress: string): Promise<{
+export async function authenticateWithWallet(connectedWalletAddress: string): Promise<{
   user: VerifyResponse['user'];
   session: boolean;
 }> {
-  // Step 1: Request nonce
-  const { nonce, message } = await requestNonce(walletAddress);
+  // Step 1: Sign the fixed message
+  const signed = await signLoginMessage(connectedWalletAddress);
 
-  // Step 2: Sign the message
-  const signature = await signMessage(message);
+  // Step 2: Verify signature and get magic link token hash
+  const verifyResult = await verifySignature({
+    wallet_address: signed.wallet_address,
+    signature: signed.signature,
+    message: signed.message,
+  });
 
-  // Step 3: Verify signature and get session
-  const verifyResult = await verifySignature(walletAddress, signature, nonce);
+  // Step 3: Establish Supabase session
+  const { error } = await supabase.auth.verifyOtp({
+    token_hash: verifyResult.token_hash,
+    type: 'magiclink',
+  });
 
-  // Step 4: Complete the magic link verification to establish session
-  if (verifyResult.verification_url) {
-    // Extract token from verification URL and verify it
-    const url = new URL(verifyResult.verification_url);
-    const token = url.searchParams.get('token') || url.hash.replace('#access_token=', '').split('&')[0];
-    const type = url.searchParams.get('type') || 'magiclink';
-    
-    if (token) {
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: verifyResult.token_hash,
-        type: 'magiclink',
-      });
-
-      if (error) {
-        console.error('OTP verification error:', error);
-        // Try alternative verification
-        const { error: altError } = await supabase.auth.verifyOtp({
-          email: verifyResult.user.email,
-          token: token,
-          type: 'magiclink',
-        });
-        
-        if (altError) {
-          console.error('Alternative verification error:', altError);
-        }
-      }
-    }
+  if (error) {
+    throw toFriendlyAuthError();
   }
 
   return {
@@ -152,6 +133,8 @@ export async function signOutWallet(): Promise<void> {
  * Get current authenticated user's wallet address
  */
 export async function getAuthenticatedWallet(): Promise<string | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   return user?.user_metadata?.wallet_address || null;
 }
