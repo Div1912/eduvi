@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useWallet } from './WalletContext';
 import { authenticateWithWallet, signOutWallet } from '@/lib/walletAuth';
@@ -32,25 +38,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { wallet, disconnect: disconnectWallet } = useWallet();
+
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<UserRole[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch user profile from database
+  // ---------------- FETCH PROFILE ----------------
   const fetchProfile = async (userId: string) => {
     try {
-      const { data, error: fetchError } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle(); // ✅ FIX: allow "no profile" without error
 
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        console.error('Error fetching profile:', fetchError);
+      if (error) {
+        console.error('Error fetching profile:', error);
         return null;
       }
 
@@ -61,16 +69,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Fetch user roles from database
+  // ---------------- FETCH ROLES ----------------
   const fetchRoles = async (userId: string) => {
     try {
-      const { data, error: fetchError } = await supabase
+      const { data, error } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId);
 
-      if (fetchError) {
-        console.error('Error fetching roles:', fetchError);
+      if (error) {
+        console.error('Error fetching roles:', error);
         return [];
       }
 
@@ -81,7 +89,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Refresh profile and roles
+  // ---------------- REFRESH PROFILE ----------------
   const refreshProfile = async () => {
     if (!user) {
       setProfile(null);
@@ -97,7 +105,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         fetchProfile(user.id),
         fetchRoles(user.id),
       ]);
-      
+
       setProfile(profileData);
       setRoles(rolesData);
     } catch (err) {
@@ -107,7 +115,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Authenticate with wallet signature
+  // ---------------- AUTHENTICATE WALLET ----------------
   const authenticateWallet = async () => {
     if (!wallet.address) {
       throw new Error('Wallet not connected');
@@ -118,9 +126,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     try {
       await authenticateWithWallet(wallet.address);
-      // Session will be updated via onAuthStateChange
+      // session handled by auth listener
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
+      const errorMessage =
+        err instanceof Error ? err.message : 'Authentication failed';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
@@ -128,7 +137,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Sign out
+  // ---------------- SIGN OUT ----------------
   const signOut = async () => {
     try {
       await signOutWallet();
@@ -142,41 +151,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Check if user has a specific role
+  // ---------------- ROLE CHECK ----------------
   const hasRole = (role: UserRole): boolean => {
-    return roles.includes(role);
+    return profile?.role === role; // ✅ FIX: single source of truth
   };
 
-  // Set up auth state listener
+  // ---------------- AUTH STATE LISTENER ----------------
   useEffect(() => {
-    // Set up auth state change listener BEFORE getting session
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
+      async (_event, newSession) => {
         setSession(newSession);
         setUser(newSession?.user || null);
 
-        if (newSession?.user) {
-          // Defer profile fetch to avoid blocking
-          setTimeout(() => {
-            refreshProfile();
-          }, 0);
-        } else {
+        if (!newSession?.user) {
           setProfile(null);
           setRoles([]);
+          setIsLoading(false);
+          return;
         }
-        
-        setIsLoading(false);
+
+        // ✅ FIX: load profile ONCE, explicitly
+        await refreshProfile();
       }
     );
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      setUser(initialSession?.user || null);
-      
-      if (initialSession?.user) {
-        refreshProfile();
-      } else {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user || null);
+
+      if (!session?.user) {
         setIsLoading(false);
       }
     });
@@ -185,13 +188,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       subscription.unsubscribe();
     };
   }, []);
-
-  // Refresh profile when user changes
-  useEffect(() => {
-    if (user) {
-      refreshProfile();
-    }
-  }, [user?.id]);
 
   return (
     <AuthContext.Provider
