@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useWallet } from './WalletContext';
+import { authenticateWithWallet, signOutWallet } from '@/lib/walletAuth';
+import { User, Session } from '@supabase/supabase-js';
 
 export type UserRole = 'student' | 'issuer' | 'verifier' | 'admin';
 
@@ -13,27 +15,38 @@ interface Profile {
 }
 
 interface AuthContextType {
+  user: User | null;
+  session: Session | null;
   profile: Profile | null;
+  roles: UserRole[];
   isLoading: boolean;
+  isAuthenticating: boolean;
   error: string | null;
-  setRole: (role: UserRole) => Promise<void>;
+  authenticateWallet: () => Promise<void>;
+  signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  hasRole: (role: UserRole) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { wallet } = useWallet();
+  const { wallet, disconnect: disconnectWallet } = useWallet();
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [roles, setRoles] = useState<UserRole[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProfile = async (walletAddress: string) => {
+  // Fetch user profile from database
+  const fetchProfile = async (userId: string) => {
     try {
       const { data, error: fetchError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('wallet_address', walletAddress.toLowerCase())
+        .eq('user_id', userId)
         .single();
 
       if (fetchError && fetchError.code !== 'PGRST116') {
@@ -48,9 +61,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Fetch user roles from database
+  const fetchRoles = async (userId: string) => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
+
+      if (fetchError) {
+        console.error('Error fetching roles:', fetchError);
+        return [];
+      }
+
+      return (data || []).map(r => r.role as UserRole);
+    } catch (err) {
+      console.error('Roles fetch error:', err);
+      return [];
+    }
+  };
+
+  // Refresh profile and roles
   const refreshProfile = async () => {
-    if (!wallet.address) {
+    if (!user) {
       setProfile(null);
+      setRoles([]);
       return;
     }
 
@@ -58,8 +93,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setError(null);
 
     try {
-      const existingProfile = await fetchProfile(wallet.address);
-      setProfile(existingProfile);
+      const [profileData, rolesData] = await Promise.all([
+        fetchProfile(user.id),
+        fetchRoles(user.id),
+      ]);
+      
+      setProfile(profileData);
+      setRoles(rolesData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile');
     } finally {
@@ -67,67 +107,106 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const setRole = async (role: UserRole) => {
+  // Authenticate with wallet signature
+  const authenticateWallet = async () => {
     if (!wallet.address) {
       throw new Error('Wallet not connected');
     }
 
-    setIsLoading(true);
+    setIsAuthenticating(true);
     setError(null);
 
     try {
-      const existingProfile = await fetchProfile(wallet.address);
-
-      if (existingProfile) {
-        // Update existing profile
-        const { data, error: updateError } = await supabase
-          .from('profiles')
-          .update({ role })
-          .eq('wallet_address', wallet.address.toLowerCase())
-          .select()
-          .single();
-
-        if (updateError) throw updateError;
-        setProfile(data as Profile);
-      } else {
-        // Create new profile
-        const { data, error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            wallet_address: wallet.address.toLowerCase(),
-            role,
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        setProfile(data as Profile);
-      }
+      await authenticateWithWallet(wallet.address);
+      // Session will be updated via onAuthStateChange
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to set role';
+      const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
-      setIsLoading(false);
+      setIsAuthenticating(false);
     }
   };
 
-  useEffect(() => {
-    if (wallet.address) {
-      refreshProfile();
-    } else {
+  // Sign out
+  const signOut = async () => {
+    try {
+      await signOutWallet();
+      disconnectWallet();
+      setUser(null);
+      setSession(null);
       setProfile(null);
+      setRoles([]);
+    } catch (err) {
+      console.error('Sign out error:', err);
     }
-  }, [wallet.address]);
+  };
+
+  // Check if user has a specific role
+  const hasRole = (role: UserRole): boolean => {
+    return roles.includes(role);
+  };
+
+  // Set up auth state listener
+  useEffect(() => {
+    // Set up auth state change listener BEFORE getting session
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, newSession) => {
+        setSession(newSession);
+        setUser(newSession?.user || null);
+
+        if (newSession?.user) {
+          // Defer profile fetch to avoid blocking
+          setTimeout(() => {
+            refreshProfile();
+          }, 0);
+        } else {
+          setProfile(null);
+          setRoles([]);
+        }
+        
+        setIsLoading(false);
+      }
+    );
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      setSession(initialSession);
+      setUser(initialSession?.user || null);
+      
+      if (initialSession?.user) {
+        refreshProfile();
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Refresh profile when user changes
+  useEffect(() => {
+    if (user) {
+      refreshProfile();
+    }
+  }, [user?.id]);
 
   return (
     <AuthContext.Provider
       value={{
+        user,
+        session,
         profile,
+        roles,
         isLoading,
+        isAuthenticating,
         error,
-        setRole,
+        authenticateWallet,
+        signOut,
         refreshProfile,
+        hasRole,
       }}
     >
       {children}

@@ -2,3 +2,6 @@ project_id = "iagnculfrgjpkjlihvem"
 
 [functions.generate-resume]
 verify_jwt = false
+
+[functions.wallet-auth]
+verify_jwt = false

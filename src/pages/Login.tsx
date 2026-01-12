@@ -1,15 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@/contexts/WalletContext';
-import { Wallet, ArrowRight, Shield, AlertCircle, GraduationCap } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Wallet, ArrowRight, Shield, AlertCircle, GraduationCap, Loader2 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import BackButton from '@/components/BackButton';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { wallet, connect, isConnecting, error, isMetaMaskAvailable } = useWallet();
+  const { wallet, connect, isConnecting, error: walletError, isMetaMaskAvailable } = useWallet();
+  const { user, isAuthenticating, authenticateWallet, error: authError } = useAuth();
   const [showMetaMaskWarning, setShowMetaMaskWarning] = useState(false);
+  const [authStep, setAuthStep] = useState<'connect' | 'sign' | 'complete'>('connect');
+
+  // If already authenticated, redirect
+  useEffect(() => {
+    if (user) {
+      navigate('/role-select');
+    }
+  }, [user, navigate]);
 
   const handleConnect = async () => {
     if (!isMetaMaskAvailable) {
@@ -17,16 +27,29 @@ const LoginPage = () => {
       return;
     }
     
-    await connect();
-    if (wallet.isConnected) {
-      navigate('/role-select');
+    try {
+      await connect();
+    } catch (err) {
+      console.error('Connection failed:', err);
     }
   };
 
-  // If already connected, redirect
-  if (wallet.isConnected) {
-    navigate('/role-select');
-  }
+  const handleAuthenticate = async () => {
+    if (!wallet.address) return;
+    
+    setAuthStep('sign');
+    try {
+      await authenticateWallet();
+      setAuthStep('complete');
+      navigate('/role-select');
+    } catch (err) {
+      setAuthStep('connect');
+      console.error('Authentication failed:', err);
+    }
+  };
+
+  const error = walletError || authError;
+  const isProcessing = isConnecting || isAuthenticating;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -56,7 +79,10 @@ const LoginPage = () => {
                 Welcome to <span className="gradient-text">EduVerify</span>
               </h1>
               <p className="text-muted-foreground">
-                Connect your wallet to access the platform
+                {wallet.isConnected 
+                  ? 'Sign the message to verify wallet ownership'
+                  : 'Connect your wallet to access the platform'
+                }
               </p>
             </div>
 
@@ -98,24 +124,61 @@ const LoginPage = () => {
               </motion.div>
             )}
 
-            {/* Connect Button */}
-            <button
-              onClick={handleConnect}
-              disabled={isConnecting}
-              className="w-full btn-primary mb-6"
-            >
-              {isConnecting ? (
-                <>
-                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  <Wallet className="w-5 h-5" />
-                  Connect with MetaMask
-                </>
-              )}
-            </button>
+            {/* Auth Steps */}
+            {wallet.isConnected ? (
+              <>
+                {/* Connected wallet info */}
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/10 border border-primary/30 mb-6">
+                  <Wallet className="w-5 h-5 text-primary" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">Wallet Connected</p>
+                    <p className="text-xs text-muted-foreground truncate">{wallet.address}</p>
+                  </div>
+                </div>
+
+                {/* Sign Button */}
+                <button
+                  onClick={handleAuthenticate}
+                  disabled={isAuthenticating}
+                  className="w-full btn-primary mb-6"
+                >
+                  {isAuthenticating ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      {authStep === 'sign' ? 'Sign the message in MetaMask...' : 'Verifying...'}
+                    </>
+                  ) : (
+                    <>
+                      <Shield className="w-5 h-5" />
+                      Sign to Authenticate
+                    </>
+                  )}
+                </button>
+
+                <p className="text-xs text-center text-muted-foreground mb-6">
+                  You'll be asked to sign a message to prove wallet ownership. This is free and doesn't cost any gas.
+                </p>
+              </>
+            ) : (
+              /* Connect Button */
+              <button
+                onClick={handleConnect}
+                disabled={isConnecting}
+                className="w-full btn-primary mb-6"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="w-5 h-5" />
+                    Connect with MetaMask
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Alternative options */}
             <div className="relative mb-6">
@@ -133,7 +196,7 @@ const LoginPage = () => {
               className="w-full btn-secondary mb-6"
             >
               <Shield className="w-5 h-5" />
-              Demo Mode
+              Demo Mode (Read Only)
               <ArrowRight className="w-4 h-4" />
             </button>
 
@@ -143,13 +206,13 @@ const LoginPage = () => {
                 <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                   <Shield className="w-4 h-4 text-primary" />
                 </div>
-                <span>Your credentials stay secure on the blockchain</span>
+                <span>Cryptographic signature verifies wallet ownership</span>
               </div>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
                 <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                   <Wallet className="w-4 h-4 text-primary" />
                 </div>
-                <span>No personal data stored on our servers</span>
+                <span>No passwords needed - your wallet is your identity</span>
               </div>
             </div>
           </div>

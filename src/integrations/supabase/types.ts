@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      auth_nonces: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          nonce: string
+          used: boolean
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          nonce: string
+          used?: boolean
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          nonce?: string
+          used?: boolean
+          wallet_address?: string
+        }
+        Relationships: []
+      }
       credentials: {
         Row: {
           created_at: string
@@ -139,6 +166,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       verifications: {
         Row: {
           credential_id: string | null
@@ -189,10 +237,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_wallet: { Args: never; Returns: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "student" | "issuer" | "verifier" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -319,6 +374,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["student", "issuer", "verifier", "admin"],
+    },
   },
 } as const
