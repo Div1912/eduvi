@@ -1,25 +1,25 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeft, 
-  LinkIcon, 
   Copy, 
   Check, 
   GraduationCap,
-  Calendar
+  Download,
+  QrCode
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import DashboardNavbar from '@/components/DashboardNavbar';
 import { toast } from 'sonner';
 
 const ShareCredentialPage = () => {
   const { credentialId } = useParams<{ credentialId: string }>();
   const navigate = useNavigate();
+  const qrRef = useRef<HTMLDivElement>(null);
   
   const [copiedLink, setCopiedLink] = useState(false);
-  const [expirationDays, setExpirationDays] = useState<number | null>(7);
 
-  // Generate verification link directly to the verify page
   const verificationLink = `${window.location.origin}/verify?id=${credentialId}`;
 
   const copyToClipboard = async () => {
@@ -27,6 +27,37 @@ const ShareCredentialPage = () => {
     setCopiedLink(true);
     toast.success('Verification link copied to clipboard');
     setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const downloadQRCode = () => {
+    if (!qrRef.current) return;
+    
+    const svg = qrRef.current.querySelector('svg');
+    if (!svg) return;
+
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+
+    img.onload = () => {
+      canvas.width = 300;
+      canvas.height = 300;
+      ctx?.fillRect(0, 0, canvas.width, canvas.height);
+      ctx?.drawImage(img, 0, 0, 300, 300);
+      
+      const pngUrl = canvas.toDataURL('image/png');
+      const downloadLink = document.createElement('a');
+      downloadLink.href = pngUrl;
+      downloadLink.download = `credential-${credentialId}-qr.png`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      
+      toast.success('QR code downloaded');
+    };
+
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
   };
 
   return (
@@ -43,7 +74,6 @@ const ShareCredentialPage = () => {
             Back to Dashboard
           </button>
 
-          {/* Share Credential */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -55,11 +85,36 @@ const ShareCredentialPage = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold">Share Credential</h1>
-                <p className="text-muted-foreground text-sm">Generate a link for employers to verify</p>
+                <p className="text-muted-foreground text-sm">Generate a link or QR code for verification</p>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {/* QR Code Section */}
+              <div className="flex flex-col items-center p-6 bg-white rounded-xl">
+                <div ref={qrRef} className="mb-4">
+                  <QRCodeSVG 
+                    value={verificationLink}
+                    size={200}
+                    level="H"
+                    includeMargin
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                  />
+                </div>
+                <p className="text-sm text-gray-600 mb-4 text-center">
+                  Scan this QR code to verify the credential
+                </p>
+                <button
+                  onClick={downloadQRCode}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Download QR Code
+                </button>
+              </div>
+
+              {/* Link Section */}
               <div>
                 <label className="block text-sm font-medium mb-2">Verification Link</label>
                 <div className="flex gap-2">
@@ -83,8 +138,7 @@ const ShareCredentialPage = () => {
               </div>
 
               <p className="text-sm text-muted-foreground">
-                Share this link with employers or anyone who needs to verify your credential. 
-                They can use it to instantly verify the authenticity on the blockchain.
+                Share the QR code or link with employers to instantly verify your credential on the blockchain.
               </p>
             </div>
           </motion.div>
