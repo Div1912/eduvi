@@ -54,10 +54,10 @@ export const ProtectedRoute = ({
       // User has a profile but wrong role - redirect to their actual dashboard
       const primaryRole = roles[0];
       const dashboardPaths: Record<UserRole, string> = {
-        student: '/student/dashboard',
-        issuer: '/issuer/dashboard',
-        verifier: '/verify',
-        admin: '/admin/dashboard',
+        student: '/dashboard/student',
+        issuer: '/dashboard/institution',
+        verifier: '/dashboard/verifier',
+        admin: '/dashboard/admin',
       };
       return <Navigate to={dashboardPaths[primaryRole]} replace />;
     }

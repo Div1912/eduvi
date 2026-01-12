@@ -2,23 +2,33 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+
+// Public pages
 import Index from "./pages/Index";
 import Verify from "./pages/Verify";
-import Login from "./pages/Login";
-import RoleSelect from "./pages/RoleSelect";
+import SignIn from "./pages/auth/SignIn";
+
+// Onboarding
+import SelectRole from "./pages/onboarding/SelectRole";
 import StudentOnboarding from "./pages/onboarding/StudentOnboarding";
 import InstitutionOnboarding from "./pages/onboarding/InstitutionOnboarding";
 import VerifierOnboarding from "./pages/onboarding/VerifierOnboarding";
-import StudentDashboard from "./pages/student/Dashboard";
+
+// Dashboards
+import StudentDashboard from "./pages/dashboard/StudentDashboard";
+import InstitutionDashboard from "./pages/dashboard/InstitutionDashboard";
+import VerifierDashboard from "./pages/dashboard/VerifierDashboard";
+import ShareCredential from "./pages/dashboard/ShareCredential";
+import Settings from "./pages/Settings";
+
+// Legacy pages (for existing routes)
 import StudentCredentials from "./pages/student/Credentials";
 import ResumeBuilder from "./pages/student/ResumeBuilder";
-import IssuerDashboard from "./pages/issuer/Dashboard";
 import IssueCredential from "./pages/issuer/IssueCredential";
-import VerifierDashboard from "./pages/verifier/Dashboard";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminUsers from "./pages/admin/Users";
 import AdminInstitutions from "./pages/admin/Institutions";
@@ -40,16 +50,17 @@ const App = () => (
               {/* Public routes */}
               <Route path="/" element={<Index />} />
               <Route path="/verify" element={<Verify />} />
-              <Route path="/login" element={<Login />} />
               
-              {/* Role selection - for first-time users */}
-              <Route path="/role-select" element={
+              {/* Auth routes */}
+              <Route path="/auth/sign-in" element={<SignIn />} />
+              <Route path="/login" element={<Navigate to="/auth/sign-in" replace />} />
+              
+              {/* Onboarding routes */}
+              <Route path="/onboarding/select-role" element={
                 <ProtectedRoute requireAuth>
-                  <RoleSelect />
+                  <SelectRole />
                 </ProtectedRoute>
               } />
-              
-              {/* Onboarding routes - for first-time users after role selection */}
               <Route path="/onboarding/student" element={
                 <ProtectedRoute requireAuth>
                   <StudentOnboarding />
@@ -66,55 +77,72 @@ const App = () => (
                 </ProtectedRoute>
               } />
               
-              {/* Dashboard redirect */}
-              <Route path="/dashboard" element={
-                <ProtectedRoute requireAuth>
-                  <RoleSelect />
-                </ProtectedRoute>
-              } />
+              {/* Legacy redirects */}
+              <Route path="/role-select" element={<Navigate to="/onboarding/select-role" replace />} />
               
-              {/* Student routes - require student role */}
-              <Route path="/student/dashboard" element={
+              {/* Dashboard routes - Student */}
+              <Route path="/dashboard/student" element={
                 <ProtectedRoute requiredRole="student">
                   <StudentDashboard />
                 </ProtectedRoute>
               } />
-              <Route path="/student/credentials" element={
+              <Route path="/dashboard/student/credentials" element={
                 <ProtectedRoute requiredRole="student">
                   <StudentCredentials />
                 </ProtectedRoute>
               } />
-              <Route path="/student/resume-builder" element={
+              <Route path="/dashboard/student/share/:credentialId" element={
+                <ProtectedRoute requiredRole="student">
+                  <ShareCredential />
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/student/resume-builder" element={
                 <ProtectedRoute requiredRole="student">
                   <ResumeBuilder />
                 </ProtectedRoute>
               } />
               
-              {/* Issuer routes - require issuer role */}
-              <Route path="/issuer/dashboard" element={
+              {/* Dashboard routes - Institution */}
+              <Route path="/dashboard/institution" element={
                 <ProtectedRoute requiredRole="issuer">
-                  <IssuerDashboard />
+                  <InstitutionDashboard />
                 </ProtectedRoute>
               } />
-              <Route path="/issuer/issue" element={
+              <Route path="/dashboard/institution/issue" element={
                 <ProtectedRoute requiredRole="issuer">
                   <IssueCredential />
                 </ProtectedRoute>
               } />
               
-              {/* Verifier routes - require verifier role */}
-              <Route path="/verifier/dashboard" element={
+              {/* Dashboard routes - Verifier */}
+              <Route path="/dashboard/verifier" element={
                 <ProtectedRoute requiredRole="verifier">
                   <VerifierDashboard />
                 </ProtectedRoute>
               } />
               
-              {/* Admin routes - require admin role */}
-              <Route path="/admin/dashboard" element={
+              {/* Settings */}
+              <Route path="/settings" element={
+                <ProtectedRoute requireAuth>
+                  <Settings />
+                </ProtectedRoute>
+              } />
+              
+              {/* Legacy routes - redirect to new paths */}
+              <Route path="/student/dashboard" element={<Navigate to="/dashboard/student" replace />} />
+              <Route path="/student/credentials" element={<Navigate to="/dashboard/student/credentials" replace />} />
+              <Route path="/student/resume-builder" element={<Navigate to="/dashboard/student/resume-builder" replace />} />
+              <Route path="/issuer/dashboard" element={<Navigate to="/dashboard/institution" replace />} />
+              <Route path="/issuer/issue" element={<Navigate to="/dashboard/institution/issue" replace />} />
+              <Route path="/verifier/dashboard" element={<Navigate to="/dashboard/verifier" replace />} />
+              
+              {/* Admin routes */}
+              <Route path="/dashboard/admin" element={
                 <ProtectedRoute requiredRole="admin">
                   <AdminDashboard />
                 </ProtectedRoute>
               } />
+              <Route path="/admin/dashboard" element={<Navigate to="/dashboard/admin" replace />} />
               <Route path="/admin/users" element={
                 <ProtectedRoute requiredRole="admin">
                   <AdminUsers />
