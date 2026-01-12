@@ -53,19 +53,23 @@ const SignInPage = () => {
     }
   };
 
-  const handleAuthenticate = async () => {
-    if (!wallet.address) return;
-    
-    setAuthStep('signing');
-    try {
-      await authenticateWallet();
-      setAuthStep('complete');
-      // Redirect will be handled by useEffect
-    } catch (err) {
-      setAuthStep('connected');
-      console.error('Authentication failed:', err);
-    }
-  };
+const handleAuthenticate = async () => {
+  if (!wallet.address) {
+    console.error("Wallet address missing");
+    return;
+  }
+
+  setAuthStep('signing');
+
+  try {
+    await authenticateWallet(wallet.address); // ✅ REQUIRED
+    setAuthStep('complete');
+  } catch (err) {
+    console.error('Authentication failed:', err);
+    setAuthStep('connected');
+  }
+};
+
 
   const handleDisconnect = () => {
     disconnect();
