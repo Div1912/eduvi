@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom"
 import { Loader2 } from "lucide-react"
-import { useAuth, type UserRole } from "@/contexts/AuthContext"
+import { useAuth, UserRole } from "@/contexts/AuthContext"
 
 interface Props {
   children: React.ReactNode
@@ -13,12 +13,20 @@ const ProtectedRoute = ({
   requiredRole,
   requireAuth = true,
 }: Props) => {
-  const { user, isLoading, isOnboarded, roles, hasRole } = useAuth()
+  const {
+    user,
+    isLoading,
+    profileLoaded,
+    isOnboarded,
+    roles,
+    hasRole,
+  } = useAuth()
+
   const location = useLocation()
   const path = location.pathname
 
-  // 1️⃣ Loading gate
-  if (isLoading) {
+  /* WAIT UNTIL AUTH + PROFILE ARE READY */
+  if (isLoading || !profileLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin" />
@@ -26,12 +34,12 @@ const ProtectedRoute = ({
     )
   }
 
-  // 2️⃣ Auth gate
+  /* AUTH */
   if (requireAuth && !user) {
     return <Navigate to="/auth/sign-in" replace />
   }
 
-  // 3️⃣ Force onboarding
+  /* FORCE ONBOARDING */
   if (user && !isOnboarded) {
     if (!path.startsWith("/onboarding")) {
       return <Navigate to="/onboarding/select-role" replace />
@@ -39,13 +47,13 @@ const ProtectedRoute = ({
     return <>{children}</>
   }
 
-  // 4️⃣ Block onboarding after completion
+  /* BLOCK ONBOARDING AFTER COMPLETE */
   if (user && isOnboarded && path.startsWith("/onboarding")) {
     return <Navigate to={`/dashboard/${roles[0]}`} replace />
   }
 
-  // 5️⃣ Role guard
-  if (requiredRole && user && !hasRole(requiredRole)) {
+  /* ROLE CHECK */
+  if (requiredRole && !hasRole(requiredRole)) {
     return <Navigate to={`/dashboard/${roles[0]}`} replace />
   }
 
