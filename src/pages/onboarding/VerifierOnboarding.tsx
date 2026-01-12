@@ -1,146 +1,145 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { Search, Loader2, ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import { Search, Loader2, ArrowRight } from 'lucide-react'
 
-import { useAuth } from '@/contexts/AuthContext';
-import { useWallet } from '@/contexts/WalletContext';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext'
+import { useWallet } from '@/contexts/WalletContext'
+import { supabase } from '@/integrations/supabase/client'
+import { toast } from 'sonner'
 
-import PublicNavbar from '@/components/PublicNavbar';
-import BackButton from '@/components/BackButton';
+import PublicNavbar from '@/components/PublicNavbar'
+import BackButton from '@/components/BackButton'
 
 /**
- * VERIFIER ONBOARDING (ONE-TIME)
+ * VERIFIER ONBOARDING
  *
- * SECURITY GUARANTEES:
- * - Profile can be created ONLY ONCE
- * - No overwrite possible
- * - Immutable binding: user_id + wallet_address
- * - Existing profiles are hard-blocked
+ * Rules:
+ * - Profile MAY exist before onboarding (valid)
+ * - Only block if onboarded === true
+ * - Allow incomplete profiles to continue onboarding
  */
 const VerifierOnboarding = () => {
-  const navigate = useNavigate();
-  const { user, refreshProfile } = useAuth();
-  const { wallet } = useWallet();
+  const navigate = useNavigate()
+  const { user, refreshProfile } = useAuth()
+  const { wallet } = useWallet()
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [existingProfile, setExistingProfile] = useState<any>(null)
+
   const [formData, setFormData] = useState({
     displayName: '',
     organization: '',
-  });
+  })
 
   /**
-   * 🔐 PRE-CHECK:
-   * Block onboarding if profile already exists
+   * 🔍 Load profile once
+   * - Do NOT block if profile exists
+   * - Redirect only if already onboarded
    */
   useEffect(() => {
-    if (!user) return;
+    if (!user) return
 
-    const checkExistingProfile = async () => {
+    const loadProfile = async () => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id')
+        .select('*')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .maybeSingle()
 
       if (error) {
-        console.error('Profile check failed:', error);
-        return;
+        console.error('Profile fetch failed:', error)
+        return
       }
 
-      if (data) {
-        toast.info('Profile already exists');
-        navigate('/dashboard/verifier', { replace: true });
+      if (data?.onboarded === true) {
+        navigate('/dashboard/verifier', { replace: true })
+        return
       }
-    };
 
-    checkExistingProfile();
-  }, [user, navigate]);
+      setExistingProfile(data)
+    }
+
+    loadProfile()
+  }, [user, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
     if (!user) {
-      toast.error('Please sign in first');
-      navigate('/auth/sign-in');
-      return;
+      toast.error('Please sign in first')
+      navigate('/auth/sign-in')
+      return
     }
 
-    // 🔐 Wallet address REQUIRED for immutable identity binding
     const walletAddress =
-      wallet.address || user.user_metadata?.wallet_address;
+      wallet.address || user.user_metadata?.wallet_address
 
     if (!walletAddress) {
-      toast.error('Wallet address not found. Please reconnect your wallet.');
-      return;
+      toast.error('Wallet address not found. Please reconnect your wallet.')
+      return
     }
 
-    setIsSubmitting(true);
+    setIsSubmitting(true)
 
     try {
       /**
-       * 🔐 FINAL SAFETY CHECK
-       * Prevent race conditions or manual bypass
+       * 🚫 Block ONLY if already onboarded
        */
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (existingProfile) {
-        toast.error('Profile already exists');
-        navigate('/dashboard/verifier', { replace: true });
-        return;
+      if (existingProfile?.onboarded === true) {
+        navigate('/dashboard/verifier', { replace: true })
+        return
       }
 
       /**
-       * ✅ CREATE PROFILE (PURE INSERT)
-       * ❌ NO UPSERT
-       * ❌ NO UPDATE
+       * 🔁 CONDITIONAL PROFILE LOGIC
        */
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
+      if (existingProfile) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            role: 'verifier',
+            display_name: formData.displayName,
+            institution: formData.organization || null,
+          })
+          .eq('user_id', user.id)
+
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('profiles').insert({
           user_id: user.id,
           wallet_address: walletAddress.toLowerCase(),
           role: 'verifier',
           display_name: formData.displayName,
           institution: formData.organization || null,
-        });
+          onboarded: false,
+        })
 
-      if (profileError) throw profileError;
+        if (error) throw error
+      }
 
       /**
-       * ✅ ASSIGN ROLE (SAFE & IDEMPOTENT)
+       * ✅ Assign role (safe & idempotent)
        */
       const { error: roleError } = await supabase
         .from('user_roles')
         .upsert(
-          {
-            user_id: user.id,
-            role: 'verifier',
-          },
-          {
-            onConflict: 'user_id,role',
-            ignoreDuplicates: true,
-          }
-        );
+          { user_id: user.id, role: 'verifier' },
+          { onConflict: 'user_id,role', ignoreDuplicates: true }
+        )
 
-      if (roleError) throw roleError;
+      if (roleError) throw roleError
 
-      await refreshProfile();
-      toast.success('Verifier account created!');
-      navigate('/dashboard/verifier');
-    } catch (error) {
-      console.error('Verifier onboarding error:', error);
-      toast.error('Failed to complete setup. Please try again.');
+      await refreshProfile()
+      toast.success('Verifier account created!')
+      navigate('/dashboard/verifier')
+    } catch (err) {
+      console.error('Verifier onboarding error:', err)
+      toast.error('Failed to complete setup. Please try again.')
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -171,40 +170,24 @@ const VerifierOnboarding = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Your Name <span className="text-destructive">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.displayName}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      displayName: e.target.value,
-                    })
-                  }
-                  className="input-glass"
-                  required
-                />
-              </div>
+              <input
+                className="input-glass"
+                placeholder="Your Name"
+                value={formData.displayName}
+                onChange={(e) =>
+                  setFormData({ ...formData, displayName: e.target.value })
+                }
+                required
+              />
 
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Organization (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={formData.organization}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      organization: e.target.value,
-                    })
-                  }
-                  className="input-glass"
-                />
-              </div>
+              <input
+                className="input-glass"
+                placeholder="Organization (optional)"
+                value={formData.organization}
+                onChange={(e) =>
+                  setFormData({ ...formData, organization: e.target.value })
+                }
+              />
 
               <button
                 type="submit"
@@ -228,7 +211,7 @@ const VerifierOnboarding = () => {
         </motion.div>
       </main>
     </div>
-  );
-};
+  )
+}
 
-export default VerifierOnboarding;
+export default VerifierOnboarding
