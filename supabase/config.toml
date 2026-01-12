@@ -1,1 +1,4 @@
 project_id = "iagnculfrgjpkjlihvem"
+
+[functions.generate-resume]
+verify_jwt = false

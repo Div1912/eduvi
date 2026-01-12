@@ -115,7 +115,13 @@ export const CONTRACT_ABI = [
 ];
 
 // Contract address (update this after deployment)
+// WARNING: Set this to your deployed contract address before going to production
 export const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+// Check if contract is properly configured
+export const isContractConfigured = (): boolean => {
+  return CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000";
+};
 
 export interface WalletState {
   address: string | null;
