@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useWallet } from '@/contexts/WalletContext';
 import { formatAddress } from '@/lib/web3';
+import { getSafeIPFSUrl } from '@/lib/ipfsUtils';
 import { 
   GraduationCap, 
   Share2, 
@@ -161,14 +162,20 @@ const StudentCredentials = () => {
                   <button className="btn-secondary text-sm py-2 px-3">
                     <Download className="w-4 h-4" />
                   </button>
-                  <a
-                    href={`https://ipfs.io/ipfs/${credential.ipfsHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-secondary text-sm py-2 px-3"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
+                  {getSafeIPFSUrl(credential.ipfsHash) ? (
+                    <a
+                      href={getSafeIPFSUrl(credential.ipfsHash)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-sm py-2 px-3"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  ) : (
+                    <span className="btn-secondary text-sm py-2 px-3 opacity-50 cursor-not-allowed" title="Invalid IPFS hash">
+                      <ExternalLink className="w-4 h-4" />
+                    </span>
+                  )}
                 </div>
               </motion.div>
             ))}

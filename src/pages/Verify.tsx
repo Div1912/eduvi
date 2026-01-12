@@ -4,7 +4,7 @@ import { Search, CheckCircle, XCircle, Loader2, ExternalLink, Shield, Graduation
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { verifyCertificate, CertificateDetails } from '@/lib/web3';
-
+import { getSafeIPFSUrl, cleanIPFSHash } from '@/lib/ipfsUtils';
 import BackButton from '@/components/BackButton';
 
 const VerifyPage = () => {
@@ -175,16 +175,22 @@ const VerifyPage = () => {
                     <p className="text-sm text-muted-foreground mb-1">IPFS Hash</p>
                     <div className="flex items-center gap-2">
                       <code className="text-sm bg-white/5 px-3 py-2 rounded-lg flex-1 overflow-hidden text-ellipsis">
-                        {result.ipfsHash}
+                        {cleanIPFSHash(result.ipfsHash)}
                       </code>
-                      <a
-                        href={`https://ipfs.io/ipfs/${result.ipfsHash.replace('ipfs://', '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-secondary p-2"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
+                      {getSafeIPFSUrl(result.ipfsHash) ? (
+                        <a
+                          href={getSafeIPFSUrl(result.ipfsHash)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-secondary p-2"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      ) : (
+                        <span className="btn-secondary p-2 opacity-50 cursor-not-allowed" title="Invalid IPFS hash">
+                          <ExternalLink className="w-4 h-4" />
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
