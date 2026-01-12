@@ -30,27 +30,31 @@ const VerifierOnboarding = () => {
       // Create profile
       const { error: profileError } = await supabase
         .from('profiles')
-        .upsert({
-          user_id: user.id,
-          wallet_address: wallet.address.toLowerCase(),
-          role: 'verifier',
-          display_name: formData.displayName,
-          institution: formData.organization || null,
-        });
+        .upsert(
+          {
+            user_id: user.id,
+            wallet_address: wallet.address.toLowerCase(),
+            role: 'verifier',
+            display_name: formData.displayName,
+            institution: formData.organization || null,
+          },
+          { onConflict: 'user_id' }
+        );
 
       if (profileError) throw profileError;
 
-      // Add verifier role
+      // Add verifier role (idempotent)
       const { error: roleError } = await supabase
         .from('user_roles')
-        .insert({
-          user_id: user.id,
-          role: 'verifier',
-        });
+        .upsert(
+          {
+            user_id: user.id,
+            role: 'verifier',
+          },
+          { onConflict: 'user_id,role' }
+        );
 
-      if (roleError && !roleError.message.includes('duplicate')) {
-        throw roleError;
-      }
+      if (roleError) throw roleError;
 
       await refreshProfile();
       toast.success('Verifier account created!');
@@ -96,7 +100,9 @@ const VerifierOnboarding = () => {
                 <input
                   type="text"
                   value={formData.displayName}
-                  onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, displayName: e.target.value })
+                  }
                   placeholder="Enter your full name"
                   className="input-glass"
                   required
@@ -110,7 +116,9 @@ const VerifierOnboarding = () => {
                 <input
                   type="text"
                   value={formData.organization}
-                  onChange={(e) => setFormData({ ...formData, organization: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, organization: e.target.value })
+                  }
                   placeholder="e.g., HR Department, Recruiting Agency"
                   className="input-glass"
                 />
