@@ -114,13 +114,58 @@ export const CONTRACT_ABI = [
   }
 ];
 
-// Contract address (update this after deployment)
-// WARNING: Set this to your deployed contract address before going to production
-export const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000";
+// Contract address on Flow EVM Testnet
+export const CONTRACT_ADDRESS = "0x3CD26d8d57f0e1d9143153ba7DbC27f372229682";
+
+// Flow EVM Testnet chain configuration
+export const FLOW_EVM_TESTNET = {
+  chainId: 545,
+  chainIdHex: '0x221',
+  chainName: 'Flow EVM Testnet',
+  rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
+  nativeCurrency: {
+    name: 'FLOW',
+    symbol: 'FLOW',
+    decimals: 18,
+  },
+  blockExplorerUrls: ['https://evm-testnet.flowscan.io'],
+};
 
 // Check if contract is properly configured
 export const isContractConfigured = (): boolean => {
-  return CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000";
+  return CONTRACT_ADDRESS.length === 42 && CONTRACT_ADDRESS.startsWith('0x');
+};
+
+// Switch to Flow EVM Testnet
+export const switchToFlowTestnet = async (): Promise<void> => {
+  if (!window.ethereum) {
+    throw new Error('No ethereum provider found');
+  }
+
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: FLOW_EVM_TESTNET.chainIdHex }],
+    });
+  } catch (error: any) {
+    // Chain not added, add it
+    if (error.code === 4902) {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [
+          {
+            chainId: FLOW_EVM_TESTNET.chainIdHex,
+            chainName: FLOW_EVM_TESTNET.chainName,
+            rpcUrls: FLOW_EVM_TESTNET.rpcUrls,
+            nativeCurrency: FLOW_EVM_TESTNET.nativeCurrency,
+            blockExplorerUrls: FLOW_EVM_TESTNET.blockExplorerUrls,
+          },
+        ],
+      });
+    } else {
+      throw error;
+    }
+  }
 };
 
 export interface WalletState {

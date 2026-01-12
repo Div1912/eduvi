@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.wallet-auth]
 verify_jwt = false
+
+[functions.ipfs-upload]
+verify_jwt = false

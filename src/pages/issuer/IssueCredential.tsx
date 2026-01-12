@@ -2,23 +2,40 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@/contexts/WalletContext';
-import { mintCertificate } from '@/lib/web3';
+import { mintCertificate, switchToFlowTestnet, FLOW_EVM_TESTNET } from '@/lib/web3';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Send,
   Loader2,
   CheckCircle,
   AlertCircle,
-  FileUp
+  FileUp,
+  Upload,
+  ExternalLink
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import BackButton from '@/components/BackButton';
 import { toast } from 'sonner';
+import { Progress } from '@/components/ui/progress';
+
+interface UploadProgress {
+  stage: 'idle' | 'uploading-file' | 'uploading-metadata' | 'minting' | 'complete';
+  percent: number;
+  message: string;
+}
 
 const IssueCredential = () => {
   const navigate = useNavigate();
   const { wallet } = useWallet();
   const [isIssuing, setIsIssuing] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [ipfsHash, setIpfsHash] = useState<string | null>(null);
+
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
+    stage: 'idle',
+    percent: 0,
+    message: '',
+  });
 
   const [formData, setFormData] = useState({
     recipientAddress: '',
@@ -53,6 +70,43 @@ const IssueCredential = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const uploadFileToIPFS = async (file: File): Promise<string> => {
+    const formDataUpload = new FormData();
+    formDataUpload.append('file', file);
+
+    const { data, error } = await supabase.functions.invoke('ipfs-upload', {
+      body: formDataUpload,
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to upload file to IPFS');
+    }
+
+    return data.ipfsHash;
+  };
+
+  const uploadMetadataToIPFS = async (metadata: {
+    name: string;
+    description: string;
+    image?: string;
+    attributes: { trait_type: string; value: string }[];
+    studentName: string;
+    degree: string;
+    university: string;
+    issuedAt: string;
+    issuerAddress: string;
+  }): Promise<string> => {
+    const { data, error } = await supabase.functions.invoke('ipfs-upload', {
+      body: { metadata },
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to upload metadata to IPFS');
+    }
+
+    return data.ipfsHash;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -60,29 +114,95 @@ const IssueCredential = () => {
 
     setIsIssuing(true);
     setTxHash(null);
+    setIpfsHash(null);
 
     try {
       // In demo mode, simulate the transaction
       if (!wallet.isConnected) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        setTxHash('0x' + Math.random().toString(16).slice(2, 66));
+        setUploadProgress({ stage: 'uploading-metadata', percent: 50, message: 'Simulating IPFS upload...' });
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        setUploadProgress({ stage: 'minting', percent: 75, message: 'Simulating blockchain transaction...' });
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        const fakeHash = '0x' + Math.random().toString(16).slice(2, 66);
+        const fakeIpfs = 'ipfs://Qm' + Math.random().toString(36).slice(2, 46);
+        
+        setTxHash(fakeHash);
+        setIpfsHash(fakeIpfs);
+        setUploadProgress({ stage: 'complete', percent: 100, message: 'Complete!' });
         toast.success('Credential issued successfully! (Demo Mode)');
       } else {
-        // Real blockchain transaction
-        const certificateURI = 'ipfs://QmExample...'; // In production, upload to IPFS first
+        // Ensure we're on Flow EVM Testnet
+        if (wallet.chainId !== FLOW_EVM_TESTNET.chainId) {
+          toast.info('Switching to Flow EVM Testnet...');
+          await switchToFlowTestnet();
+        }
+
+        let documentHash: string | undefined;
+
+        // Upload file if provided
+        if (formData.certificateFile) {
+          setUploadProgress({ 
+            stage: 'uploading-file', 
+            percent: 20, 
+            message: 'Uploading document to IPFS...' 
+          });
+          documentHash = await uploadFileToIPFS(formData.certificateFile);
+          console.log('Document uploaded to IPFS:', documentHash);
+        }
+
+        // Create and upload metadata
+        setUploadProgress({ 
+          stage: 'uploading-metadata', 
+          percent: 50, 
+          message: 'Creating credential metadata...' 
+        });
+
+        const metadata = {
+          name: `${formData.degree} - ${formData.studentName}`,
+          description: `Academic credential issued by ${formData.university} to ${formData.studentName} for ${formData.degree}.`,
+          image: documentHash,
+          attributes: [
+            { trait_type: 'Degree', value: formData.degree },
+            { trait_type: 'University', value: formData.university },
+            { trait_type: 'Student', value: formData.studentName },
+            { trait_type: 'Issued Date', value: new Date().toISOString().split('T')[0] },
+          ],
+          studentName: formData.studentName,
+          degree: formData.degree,
+          university: formData.university,
+          issuedAt: new Date().toISOString(),
+          issuerAddress: wallet.address!,
+        };
+
+        const metadataHash = await uploadMetadataToIPFS(metadata);
+        setIpfsHash(metadataHash);
+        console.log('Metadata uploaded to IPFS:', metadataHash);
+
+        // Mint on blockchain
+        setUploadProgress({ 
+          stage: 'minting', 
+          percent: 75, 
+          message: 'Minting credential on Flow EVM...' 
+        });
+
         const hash = await mintCertificate(
           formData.recipientAddress,
           formData.studentName,
           formData.degree,
           formData.university,
-          certificateURI
+          metadataHash
         );
+
         setTxHash(hash);
+        setUploadProgress({ stage: 'complete', percent: 100, message: 'Complete!' });
         toast.success('Credential issued successfully!');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to issue credential:', error);
-      toast.error('Failed to issue credential. Please try again.');
+      toast.error(error.message || 'Failed to issue credential. Please try again.');
+      setUploadProgress({ stage: 'idle', percent: 0, message: '' });
     } finally {
       setIsIssuing(false);
     }
@@ -91,6 +211,11 @@ const IssueCredential = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('File size must be less than 10MB');
+        return;
+      }
       setFormData({ ...formData, certificateFile: file });
     }
   };
@@ -112,18 +237,49 @@ const IssueCredential = () => {
               </div>
               <h2 className="text-2xl font-bold mb-2">Credential Issued!</h2>
               <p className="text-muted-foreground mb-6">
-                The credential has been successfully minted on the blockchain.
+                The credential has been successfully minted on Flow EVM Testnet.
               </p>
               
-              <div className="bg-white/[0.02] rounded-xl p-4 mb-6">
-                <p className="text-sm text-muted-foreground mb-1">Transaction Hash</p>
-                <code className="text-sm font-mono break-all">{txHash}</code>
+              <div className="space-y-4 mb-6">
+                <div className="bg-white/[0.02] rounded-xl p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Transaction Hash</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <code className="text-sm font-mono break-all">{txHash}</code>
+                    <a 
+                      href={`https://evm-testnet.flowscan.io/tx/${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+                </div>
+
+                {ipfsHash && (
+                  <div className="bg-white/[0.02] rounded-xl p-4">
+                    <p className="text-sm text-muted-foreground mb-1">IPFS Metadata</p>
+                    <div className="flex items-center justify-center gap-2">
+                      <code className="text-sm font-mono break-all">{ipfsHash}</code>
+                      <a 
+                        href={`https://gateway.pinata.cloud/ipfs/${ipfsHash.replace('ipfs://', '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:text-primary/80"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-4 justify-center">
                 <button
                   onClick={() => {
                     setTxHash(null);
+                    setIpfsHash(null);
+                    setUploadProgress({ stage: 'idle', percent: 0, message: '' });
                     setFormData({
                       recipientAddress: '',
                       studentName: '',
@@ -168,7 +324,7 @@ const IssueCredential = () => {
               Issue <span className="gradient-text">Credential</span>
             </h1>
             <p className="text-muted-foreground">
-              Mint a new academic credential NFT on the blockchain
+              Mint a new academic credential NFT on Flow EVM Testnet
             </p>
           </motion.div>
 
@@ -271,11 +427,15 @@ const IssueCredential = () => {
                   Certificate Document (Optional)
                 </label>
                 <label className="flex items-center justify-center gap-3 p-6 rounded-xl border-2 border-dashed border-white/10 hover:border-white/20 cursor-pointer transition-colors">
-                  <FileUp className="w-6 h-6 text-muted-foreground" />
-                  <span className="text-muted-foreground">
+                  {formData.certificateFile ? (
+                    <CheckCircle className="w-6 h-6 text-green-400" />
+                  ) : (
+                    <FileUp className="w-6 h-6 text-muted-foreground" />
+                  )}
+                  <span className={formData.certificateFile ? 'text-green-400' : 'text-muted-foreground'}>
                     {formData.certificateFile 
                       ? formData.certificateFile.name 
-                      : 'Click to upload PDF or image'}
+                      : 'Click to upload PDF or image (max 10MB)'}
                   </span>
                   <input
                     type="file"
@@ -285,9 +445,23 @@ const IssueCredential = () => {
                   />
                 </label>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Will be uploaded to IPFS for permanent storage
+                  Will be uploaded to IPFS for permanent decentralized storage
                 </p>
               </div>
+
+              {/* Upload Progress */}
+              {isIssuing && uploadProgress.stage !== 'idle' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2">
+                      <Upload className="w-4 h-4 animate-pulse" />
+                      {uploadProgress.message}
+                    </span>
+                    <span>{uploadProgress.percent}%</span>
+                  </div>
+                  <Progress value={uploadProgress.percent} className="h-2" />
+                </div>
+              )}
 
               {/* Submit Button */}
               <button
@@ -298,7 +472,7 @@ const IssueCredential = () => {
                 {isIssuing ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Issuing Credential...
+                    {uploadProgress.message || 'Processing...'}
                   </>
                 ) : (
                   <>
