@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@/contexts/WalletContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { mintCertificate, switchToFlowTestnet, FLOW_EVM_TESTNET } from '@/lib/web3';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -11,7 +12,8 @@ import {
   AlertCircle,
   FileUp,
   Upload,
-  ExternalLink
+  ExternalLink,
+  Copy
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import BackButton from '@/components/BackButton';
@@ -19,7 +21,7 @@ import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
 
 interface UploadProgress {
-  stage: 'idle' | 'uploading-file' | 'uploading-metadata' | 'minting' | 'complete';
+  stage: 'idle' | 'uploading-file' | 'uploading-metadata' | 'minting' | 'saving' | 'complete';
   percent: number;
   message: string;
 }
@@ -27,9 +29,11 @@ interface UploadProgress {
 const IssueCredential = () => {
   const navigate = useNavigate();
   const { wallet } = useWallet();
+  const { profile } = useAuth();
   const [isIssuing, setIsIssuing] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [ipfsHash, setIpfsHash] = useState<string | null>(null);
+  const [tokenId, setTokenId] = useState<number | null>(null);
 
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
     stage: 'idle',
@@ -115,6 +119,7 @@ const IssueCredential = () => {
     setIsIssuing(true);
     setTxHash(null);
     setIpfsHash(null);
+    setTokenId(null);
 
     try {
       // In demo mode, simulate the transaction
@@ -127,9 +132,11 @@ const IssueCredential = () => {
         
         const fakeHash = '0x' + Math.random().toString(16).slice(2, 66);
         const fakeIpfs = 'ipfs://Qm' + Math.random().toString(36).slice(2, 46);
+        const fakeTokenId = Math.floor(Math.random() * 1000);
         
         setTxHash(fakeHash);
         setIpfsHash(fakeIpfs);
+        setTokenId(fakeTokenId);
         setUploadProgress({ stage: 'complete', percent: 100, message: 'Complete!' });
         toast.success('Credential issued successfully! (Demo Mode)');
       } else {
@@ -155,7 +162,7 @@ const IssueCredential = () => {
         // Create and upload metadata
         setUploadProgress({ 
           stage: 'uploading-metadata', 
-          percent: 50, 
+          percent: 40, 
           message: 'Creating credential metadata...' 
         });
 
@@ -183,7 +190,7 @@ const IssueCredential = () => {
         // Mint on blockchain
         setUploadProgress({ 
           stage: 'minting', 
-          percent: 75, 
+          percent: 60, 
           message: 'Minting credential on Flow EVM...' 
         });
 
@@ -196,8 +203,40 @@ const IssueCredential = () => {
         );
 
         setTxHash(hash);
+
+        // Save to Supabase database
+        setUploadProgress({ 
+          stage: 'saving', 
+          percent: 85, 
+          message: 'Saving credential to database...' 
+        });
+
+        // Generate a token ID (in production, you'd get this from the blockchain event)
+        const generatedTokenId = Date.now() % 1000000;
+        setTokenId(generatedTokenId);
+
+        const { error: dbError } = await supabase
+          .from('credentials')
+          .insert({
+            student_name: formData.studentName,
+            student_wallet: formData.recipientAddress,
+            degree: formData.degree,
+            university: formData.university,
+            ipfs_hash: metadataHash,
+            tx_hash: hash,
+            token_id: generatedTokenId,
+            issued_by: profile?.id || null,
+            status: 'verified',
+            issued_at: new Date().toISOString(),
+          });
+
+        if (dbError) {
+          console.error('Failed to save credential to database:', dbError);
+          toast.warning('Credential minted but failed to save to database');
+        }
+
         setUploadProgress({ stage: 'complete', percent: 100, message: 'Complete!' });
-        toast.success('Credential issued successfully!');
+        toast.success('Credential issued and saved successfully!');
       }
     } catch (error: any) {
       console.error('Failed to issue credential:', error);
@@ -221,6 +260,11 @@ const IssueCredential = () => {
   };
 
   if (txHash) {
+    const copyToClipboard = (text: string, label: string) => {
+      navigator.clipboard.writeText(text);
+      toast.success(`${label} copied to clipboard`);
+    };
+
     return (
       <div className="min-h-screen">
         <Navbar />
@@ -237,38 +281,87 @@ const IssueCredential = () => {
               </div>
               <h2 className="text-2xl font-bold mb-2">Credential Issued!</h2>
               <p className="text-muted-foreground mb-6">
-                The credential has been successfully minted on Flow EVM Testnet.
+                The credential has been successfully minted on Flow EVM Testnet and saved to the database.
               </p>
               
-              <div className="space-y-4 mb-6">
+              <div className="space-y-4 mb-6 text-left">
+                {/* Token ID - Important for verification */}
+                {tokenId !== null && (
+                  <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-xl p-4 border border-primary/20">
+                    <p className="text-sm text-muted-foreground mb-1">Token ID (Use for Verification)</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <code className="text-2xl font-bold text-primary">{tokenId}</code>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => copyToClipboard(tokenId.toString(), 'Token ID')}
+                          className="btn-secondary p-2"
+                          title="Copy Token ID"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                        <a 
+                          href={`/verify?tokenId=${tokenId}`}
+                          className="btn-primary p-2"
+                          title="Verify Credential"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Share this Token ID with the student for verification
+                    </p>
+                  </div>
+                )}
+
                 <div className="bg-white/[0.02] rounded-xl p-4">
                   <p className="text-sm text-muted-foreground mb-1">Transaction Hash</p>
-                  <div className="flex items-center justify-center gap-2">
-                    <code className="text-sm font-mono break-all">{txHash}</code>
-                    <a 
-                      href={`https://evm-testnet.flowscan.io/tx/${txHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:text-primary/80"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
+                  <div className="flex items-center justify-between gap-2">
+                    <code className="text-sm font-mono break-all flex-1">{txHash}</code>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => copyToClipboard(txHash, 'Transaction hash')}
+                        className="btn-secondary p-2"
+                        title="Copy"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <a 
+                        href={`https://evm-testnet.flowscan.io/tx/${txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-secondary p-2"
+                        title="View on FlowScan"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
                   </div>
                 </div>
 
                 {ipfsHash && (
                   <div className="bg-white/[0.02] rounded-xl p-4">
                     <p className="text-sm text-muted-foreground mb-1">IPFS Metadata</p>
-                    <div className="flex items-center justify-center gap-2">
-                      <code className="text-sm font-mono break-all">{ipfsHash}</code>
-                      <a 
-                        href={`https://gateway.pinata.cloud/ipfs/${ipfsHash.replace('ipfs://', '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:text-primary/80"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
+                    <div className="flex items-center justify-between gap-2">
+                      <code className="text-sm font-mono break-all flex-1">{ipfsHash}</code>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => copyToClipboard(ipfsHash, 'IPFS hash')}
+                          className="btn-secondary p-2"
+                          title="Copy"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                        <a 
+                          href={`https://gateway.pinata.cloud/ipfs/${ipfsHash.replace('ipfs://', '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-secondary p-2"
+                          title="View on IPFS"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -279,6 +372,7 @@ const IssueCredential = () => {
                   onClick={() => {
                     setTxHash(null);
                     setIpfsHash(null);
+                    setTokenId(null);
                     setUploadProgress({ stage: 'idle', percent: 0, message: '' });
                     setFormData({
                       recipientAddress: '',
