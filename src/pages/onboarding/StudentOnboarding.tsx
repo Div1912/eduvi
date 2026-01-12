@@ -15,9 +15,9 @@ import BackButton from '@/components/BackButton'
  * STUDENT ONBOARDING
  *
  * Rules:
- * - Profile MAY exist before onboarding (valid)
- * - Only block if onboarded === true
- * - Allow incomplete profiles to continue onboarding
+ * - Profile MAY exist before onboarding
+ * - Block ONLY if onboarded === true
+ * - Must be re-run safe (refresh / retry / latency)
  */
 const StudentOnboarding = () => {
   const navigate = useNavigate()
@@ -43,8 +43,6 @@ const StudentOnboarding = () => {
 
   /**
    * 🔍 Fetch profile ONCE
-   * - Do NOT block if profile exists
-   * - Only redirect if already onboarded
    */
   useEffect(() => {
     if (!user) return
@@ -75,6 +73,9 @@ const StudentOnboarding = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // 🔐 HARD SUBMIT LOCK
+    if (isSubmitting) return
+
     if (!user) {
       toast.error('Please sign in first')
       navigate('/auth/sign-in')
@@ -101,9 +102,7 @@ const StudentOnboarding = () => {
       }
 
       /**
-       * 🔁 CONDITIONAL LOGIC
-       * - UPDATE if profile exists (but incomplete)
-       * - INSERT if profile does not exist
+       * 🔁 UPDATE or INSERT (IDEMPOTENT)
        */
       if (existingProfile) {
         const { error } = await supabase
@@ -117,20 +116,27 @@ const StudentOnboarding = () => {
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from('profiles').insert({
-          user_id: user.id,
-          wallet_address: walletAddress.toLowerCase(),
-          role: 'student',
-          display_name: formData.displayName,
-          education_level: formData.educationLevel,
-          onboarded: false,
-        })
+        const { data, error } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: user.id,
+            wallet_address: walletAddress.toLowerCase(),
+            role: 'student',
+            display_name: formData.displayName,
+            education_level: formData.educationLevel,
+            onboarded: false,
+          })
+          .select()
+          .single()
 
         if (error) throw error
+
+        // 🔁 sync local state
+        setExistingProfile(data)
       }
 
       /**
-       * ✅ Assign role (safe + idempotent)
+       * ✅ ROLE ASSIGN (SAFE)
        */
       const { error: roleError } = await supabase
         .from('user_roles')
@@ -143,7 +149,7 @@ const StudentOnboarding = () => {
 
       await refreshProfile()
       toast.success('Welcome to EduVerify!')
-      navigate('/dashboard/student')
+      navigate('/dashboard/student', { replace: true })
     } catch (err) {
       console.error('Onboarding error:', err)
       toast.error('Failed to complete onboarding. Please try again.')
