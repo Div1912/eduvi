@@ -194,7 +194,7 @@ const IssueCredential = () => {
           message: 'Minting credential on Flow EVM...' 
         });
 
-        const hash = await mintCertificate(
+        const mintResult = await mintCertificate(
           formData.recipientAddress,
           formData.studentName,
           formData.degree,
@@ -202,7 +202,8 @@ const IssueCredential = () => {
           metadataHash
         );
 
-        setTxHash(hash);
+        setTxHash(mintResult.txHash);
+        setTokenId(mintResult.tokenId);
 
         // Save to Supabase database
         setUploadProgress({ 
@@ -210,10 +211,6 @@ const IssueCredential = () => {
           percent: 85, 
           message: 'Saving credential to database...' 
         });
-
-        // Generate a token ID (in production, you'd get this from the blockchain event)
-        const generatedTokenId = Date.now() % 1000000;
-        setTokenId(generatedTokenId);
 
         const { error: dbError } = await supabase
           .from('credentials')
@@ -223,8 +220,8 @@ const IssueCredential = () => {
             degree: formData.degree,
             university: formData.university,
             ipfs_hash: metadataHash,
-            tx_hash: hash,
-            token_id: generatedTokenId,
+            tx_hash: mintResult.txHash,
+            token_id: mintResult.tokenId,
             issued_by: profile?.id || null,
             status: 'verified',
             issued_at: new Date().toISOString(),

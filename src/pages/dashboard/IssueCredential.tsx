@@ -11,7 +11,9 @@ import {
   User,
   FileText,
   Calendar,
-  CheckCircle
+  CheckCircle,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
@@ -19,9 +21,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import DashboardNavbar from '@/components/DashboardNavbar';
 import { z } from 'zod';
+import { mintCertificate, switchToFlowTestnet, FLOW_EVM_TESTNET } from '@/lib/web3';
+import { Progress } from '@/components/ui/progress';
 
 const credentialSchema = z.object({
-  studentName: z.string().trim().min(2, 'Name must be at least 2 characters').max(100, 'Name too long'),
+  studentName: z.string().trim().min(2, 'Name must be at least 2 characters').max(50, 'Name must be 50 characters or less'),
   studentWallet: z.string().trim().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid wallet address'),
   studentEmail: z.string().email('Invalid email').optional().or(z.literal('')),
   degree: z.string().trim().min(2, 'Degree must be at least 2 characters').max(200, 'Degree name too long'),
@@ -29,13 +33,30 @@ const credentialSchema = z.object({
   graduationDate: z.string().min(1, 'Graduation date is required'),
 });
 
+interface MintProgress {
+  stage: 'idle' | 'preparing' | 'minting' | 'saving' | 'complete';
+  percent: number;
+  message: string;
+}
+
+interface IssuedCredential {
+  tokenId: number;
+  txHash: string;
+  ipfsHash: string | null;
+}
+
 const IssueCredentialPage = () => {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
   const { wallet } = useWallet();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [issuedCredential, setIssuedCredential] = useState<IssuedCredential | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [mintProgress, setMintProgress] = useState<MintProgress>({
+    stage: 'idle',
+    percent: 0,
+    message: '',
+  });
   
   const [formData, setFormData] = useState({
     studentName: '',
@@ -79,43 +100,81 @@ const IssueCredentialPage = () => {
     }
 
     setIsSubmitting(true);
+    setMintProgress({ stage: 'preparing', percent: 10, message: 'Preparing credential...' });
+
     try {
-      // Create credential in database
-      const { data, error } = await supabase
+      const institution = profile.institution || 'Unknown Institution';
+      let tokenId: number;
+      let txHash: string;
+
+      // Check if wallet is connected for real minting
+      if (wallet.isConnected && wallet.address) {
+        // Ensure we're on Flow EVM Testnet
+        if (wallet.chainId !== FLOW_EVM_TESTNET.chainId) {
+          toast.info('Switching to Flow EVM Testnet...');
+          await switchToFlowTestnet();
+        }
+
+        setMintProgress({ stage: 'minting', percent: 40, message: 'Minting on blockchain...' });
+
+        // Create metadata URI (simple version without IPFS for now)
+        const metadataUri = `data:application/json,${encodeURIComponent(JSON.stringify({
+          name: `${formData.degree} - ${formData.studentName}`,
+          description: `Academic credential issued by ${institution}`,
+          attributes: [
+            { trait_type: 'Degree', value: formData.degree },
+            { trait_type: 'University', value: institution },
+            { trait_type: 'Student', value: formData.studentName },
+            { trait_type: 'Graduation Date', value: formData.graduationDate },
+          ],
+        }))}`;
+
+        // Mint on blockchain
+        const mintResult = await mintCertificate(
+          formData.studentWallet.trim(),
+          formData.studentName.trim(),
+          formData.degree.trim(),
+          institution,
+          metadataUri
+        );
+
+        tokenId = mintResult.tokenId;
+        txHash = mintResult.txHash;
+      } else {
+        // Demo mode - generate mock values
+        setMintProgress({ stage: 'minting', percent: 40, message: 'Simulating blockchain transaction...' });
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        tokenId = Math.floor(Math.random() * 100000);
+        txHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      }
+
+      setMintProgress({ stage: 'saving', percent: 75, message: 'Saving to database...' });
+
+      // Save to database
+      const { error } = await supabase
         .from('credentials')
         .insert({
           student_name: formData.studentName.trim(),
           student_wallet: formData.studentWallet.toLowerCase().trim(),
           degree: formData.degree.trim(),
-          university: profile.institution || 'Unknown Institution',
+          university: institution,
           issued_by: profile.id,
-          status: 'pending',
+          status: 'verified',
           issued_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
+          token_id: tokenId,
+          tx_hash: txHash,
+        });
 
       if (error) throw error;
 
-      setIsSuccess(true);
+      setMintProgress({ stage: 'complete', percent: 100, message: 'Complete!' });
+      setIssuedCredential({ tokenId, txHash, ipfsHash: null });
       toast.success('Credential issued successfully!');
-      
-      // Reset form after short delay
-      setTimeout(() => {
-        setFormData({
-          studentName: '',
-          studentWallet: '',
-          studentEmail: '',
-          degree: '',
-          major: '',
-          graduationDate: '',
-        });
-        setIsSuccess(false);
-      }, 3000);
       
     } catch (error: any) {
       console.error('Failed to issue credential:', error);
       toast.error(error.message || 'Failed to issue credential');
+      setMintProgress({ stage: 'idle', percent: 0, message: '' });
     } finally {
       setIsSubmitting(false);
     }
@@ -123,13 +182,30 @@ const IssueCredentialPage = () => {
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
-  if (isSuccess) {
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard`);
+  };
+
+  const resetForm = () => {
+    setIssuedCredential(null);
+    setMintProgress({ stage: 'idle', percent: 0, message: '' });
+    setFormData({
+      studentName: '',
+      studentWallet: '',
+      studentEmail: '',
+      degree: '',
+      major: '',
+      graduationDate: '',
+    });
+  };
+
+  if (issuedCredential) {
     return (
       <div className="min-h-screen">
         <DashboardNavbar />
@@ -138,21 +214,58 @@ const IssueCredentialPage = () => {
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="glass-card p-12 text-center"
+              className="glass-card p-8 text-center"
             >
               <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-6">
                 <CheckCircle className="w-10 h-10 text-green-400" />
               </div>
-              <h2 className="text-2xl font-bold mb-4">Credential Issued!</h2>
+              <h2 className="text-2xl font-bold mb-2">Credential Issued!</h2>
               <p className="text-muted-foreground mb-6">
-                The credential has been successfully issued to {formData.studentName}.
-                It will appear in their wallet once they log in.
+                The credential has been minted and issued to {formData.studentName}.
               </p>
+
+              {/* Token ID - Primary */}
+              <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-xl p-4 border border-primary/20 mb-4">
+                <p className="text-sm text-muted-foreground mb-1">Token ID (Use for Verification)</p>
+                <div className="flex items-center justify-center gap-3">
+                  <code className="text-3xl font-bold text-primary">#{issuedCredential.tokenId}</code>
+                  <button
+                    onClick={() => copyToClipboard(issuedCredential.tokenId.toString(), 'Token ID')}
+                    className="btn-secondary p-2"
+                    title="Copy Token ID"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Share this Token ID with the student for verification
+                </p>
+              </div>
+
+              {/* Transaction Hash */}
+              <div className="bg-white/[0.02] rounded-xl p-4 mb-6 text-left">
+                <p className="text-sm text-muted-foreground mb-1">Transaction Hash</p>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-mono break-all flex-1">{issuedCredential.txHash}</code>
+                  <button
+                    onClick={() => copyToClipboard(issuedCredential.txHash, 'Transaction hash')}
+                    className="btn-secondary p-2 flex-shrink-0"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  <a 
+                    href={`https://evm-testnet.flowscan.io/tx/${issuedCredential.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-secondary p-2 flex-shrink-0"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+
               <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => setIsSuccess(false)}
-                  className="btn-primary"
-                >
+                <button onClick={resetForm} className="btn-primary">
                   Issue Another
                 </button>
                 <button
@@ -330,6 +443,14 @@ const IssueCredentialPage = () => {
                 <p className="font-medium">{profile?.institution || 'Not configured'}</p>
               </div>
 
+              {/* Minting Progress */}
+              {isSubmitting && mintProgress.stage !== 'idle' && (
+                <div className="space-y-2">
+                  <Progress value={mintProgress.percent} className="h-2" />
+                  <p className="text-sm text-muted-foreground text-center">{mintProgress.message}</p>
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={isSubmitting}
@@ -338,15 +459,21 @@ const IssueCredentialPage = () => {
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Issuing Credential...
+                    {wallet.isConnected ? 'Minting on Blockchain...' : 'Issuing Credential...'}
                   </>
                 ) : (
                   <>
                     <Send className="w-5 h-5" />
-                    Issue Credential
+                    {wallet.isConnected ? 'Mint & Issue Credential' : 'Issue Credential (Demo)'}
                   </>
                 )}
               </button>
+
+              {!wallet.isConnected && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Connect your wallet to mint credentials on the blockchain
+                </p>
+              )}
             </form>
           </motion.div>
         </div>

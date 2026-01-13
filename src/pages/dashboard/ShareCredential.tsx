@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
@@ -7,11 +7,20 @@ import {
   Check, 
   GraduationCap,
   Download,
-  QrCode
+  Loader2
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import DashboardNavbar from '@/components/DashboardNavbar';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+interface CredentialData {
+  id: string;
+  token_id: number | null;
+  degree: string;
+  university: string;
+  student_name: string;
+}
 
 const ShareCredentialPage = () => {
   const { credentialId } = useParams<{ credentialId: string }>();
@@ -19,8 +28,38 @@ const ShareCredentialPage = () => {
   const qrRef = useRef<HTMLDivElement>(null);
   
   const [copiedLink, setCopiedLink] = useState(false);
+  const [credential, setCredential] = useState<CredentialData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const verificationLink = `${window.location.origin}/verify?id=${credentialId}`;
+  useEffect(() => {
+    const fetchCredential = async () => {
+      if (!credentialId) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('credentials')
+          .select('id, token_id, degree, university, student_name')
+          .eq('id', credentialId)
+          .maybeSingle();
+
+        if (error) throw error;
+        setCredential(data);
+      } catch (error) {
+        console.error('Failed to fetch credential:', error);
+        toast.error('Failed to load credential');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCredential();
+  }, [credentialId]);
+
+  // Use token_id for verification if available, otherwise fall back to id
+  const verificationParam = credential?.token_id !== null && credential?.token_id !== undefined 
+    ? `tokenId=${credential.token_id}` 
+    : `id=${credentialId}`;
+  const verificationLink = `${window.location.origin}/verify?${verificationParam}`;
 
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(verificationLink);
@@ -60,6 +99,19 @@ const ShareCredentialPage = () => {
     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen">
+        <DashboardNavbar />
+        <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
+          <div className="container mx-auto max-w-2xl flex justify-center items-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <DashboardNavbar />
@@ -85,9 +137,19 @@ const ShareCredentialPage = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold">Share Credential</h1>
-                <p className="text-muted-foreground text-sm">Generate a link or QR code for verification</p>
+                <p className="text-muted-foreground text-sm">
+                  {credential?.degree} • {credential?.university}
+                </p>
               </div>
             </div>
+
+            {/* Token ID Display */}
+            {credential?.token_id !== null && credential?.token_id !== undefined && (
+              <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-6">
+                <p className="text-sm text-muted-foreground mb-1">Token ID for Verification</p>
+                <p className="text-2xl font-bold text-primary font-mono">#{credential.token_id}</p>
+              </div>
+            )}
 
             <div className="space-y-6">
               {/* QR Code Section */}
