@@ -60,12 +60,14 @@ const InstitutionOnboarding = () => {
         return
       }
 
-      if (data?.onboarded === true) {
+      const profile = data as any
+
+      if (profile?.onboarded === true) {
         navigate('/dashboard/institution', { replace: true })
         return
       }
 
-      setExistingProfile(data)
+      setExistingProfile(profile)
     }
 
     loadProfile()
@@ -146,7 +148,7 @@ const InstitutionOnboarding = () => {
       if (roleError) throw roleError
 
       // 🔁 Sync auth context
-      await refreshProfile(user.id)
+      await refreshProfile()
 
       toast.success('Institution registered successfully!')
       navigate('/dashboard/institution', { replace: true })

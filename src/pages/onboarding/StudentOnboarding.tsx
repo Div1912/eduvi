@@ -59,12 +59,14 @@ const StudentOnboarding = () => {
         return
       }
 
-      if (data?.onboarded === true) {
+      const profile = data as any
+
+      if (profile?.onboarded === true) {
         navigate('/dashboard/student', { replace: true })
         return
       }
 
-      setExistingProfile(data)
+      setExistingProfile(profile)
     }
 
     loadProfile()
@@ -111,6 +113,7 @@ const StudentOnboarding = () => {
             role: 'student',
             display_name: formData.displayName,
             education_level: formData.educationLevel,
+            onboarded: true,
           })
           .eq('user_id', user.id)
 
@@ -124,7 +127,7 @@ const StudentOnboarding = () => {
             role: 'student',
             display_name: formData.displayName,
             education_level: formData.educationLevel,
-            onboarded: false,
+            onboarded: true,
           })
           .select()
           .single()

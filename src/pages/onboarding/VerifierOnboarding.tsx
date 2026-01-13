@@ -52,12 +52,14 @@ const VerifierOnboarding = () => {
         return
       }
 
-      if (data?.onboarded === true) {
+      const profile = data as any
+
+      if (profile?.onboarded === true) {
         navigate('/dashboard/verifier', { replace: true })
         return
       }
 
-      setExistingProfile(data)
+      setExistingProfile(profile)
     }
 
     loadProfile()
@@ -101,6 +103,7 @@ const VerifierOnboarding = () => {
             role: 'verifier',
             display_name: formData.displayName,
             institution: formData.organization || null,
+            onboarded: true,
           })
           .eq('user_id', user.id)
 
@@ -112,7 +115,7 @@ const VerifierOnboarding = () => {
           role: 'verifier',
           display_name: formData.displayName,
           institution: formData.organization || null,
-          onboarded: false,
+          onboarded: true,
         })
 
         if (error) throw error

@@ -13,14 +13,19 @@ import type { User, Session } from "@supabase/supabase-js"
 
 export type UserRole = "student" | "issuer" | "verifier" | "admin"
 
+/**
+ * App-facing profile shape.
+ * Note: generated DB types may lag behind schema changes, so we keep this permissive.
+ */
 interface Profile {
   id: string
   user_id: string
   wallet_address: string
-  role: UserRole
   display_name: string | null
   institution: string | null
-  onboarded: boolean
+  onboarded?: boolean | null
+  // Allow additional columns without breaking assignability.
+  [key: string]: unknown
 }
 
 interface AuthContextType {
@@ -31,6 +36,8 @@ interface AuthContextType {
   isLoading: boolean
   profileLoaded: boolean
   isOnboarded: boolean
+  isAuthenticating: boolean
+  error: string | null
   authenticateWallet: (walletAddress: string) => Promise<void>
   refreshProfile: () => Promise<void>
   hasRole: (role: UserRole) => boolean
@@ -49,6 +56,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true)
   const [profileLoaded, setProfileLoaded] = useState(false)
 
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
   /* ---------------- PROFILE ---------------- */
 
   const refreshProfile = async () => {
@@ -62,21 +72,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setProfileLoaded(false)
 
     try {
-      const [{ data: profileData }, { data: rolesData }] =
+      const [{ data: profileData, error: profileError }, { data: rolesData, error: rolesError }] =
         await Promise.all([
-          supabase
-            .from("profiles")
-            .select("*")
-            .eq("user_id", user.id)
-            .maybeSingle(),
-          supabase
-            .from("user_roles")
-            .select("role")
-            .eq("user_id", user.id),
+          supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
+          supabase.from("user_roles").select("role").eq("user_id", user.id),
         ])
 
-      setProfile(profileData ?? null)
+      if (profileError) throw profileError
+      if (rolesError) throw rolesError
+
+      setProfile((profileData as unknown as Profile) ?? null)
       setRoles((rolesData ?? []).map((r) => r.role as UserRole))
+    } catch (e) {
+      console.error("refreshProfile failed:", e)
+      setProfile(null)
+      setRoles([])
     } finally {
       setProfileLoaded(true)
     }
@@ -86,7 +96,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const authenticateWallet = async (walletAddress: string) => {
     if (!walletAddress) throw new Error("Wallet address missing")
-    await authenticateWithWallet(walletAddress)
+
+    setError(null)
+    setIsAuthenticating(true)
+    try {
+      await authenticateWithWallet(walletAddress)
+    } catch (e: any) {
+      const message = e?.message || "Authentication failed"
+      setError(message)
+      throw e
+    } finally {
+      setIsAuthenticating(false)
+    }
   }
 
   /* ---------------- AUTH BOOTSTRAP ---------------- */
@@ -163,6 +184,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isLoading,
         profileLoaded,
         isOnboarded,
+        isAuthenticating,
+        error,
         authenticateWallet,
         refreshProfile,
         hasRole,
