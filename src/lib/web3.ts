@@ -262,13 +262,18 @@ export const verifyCertificate = async (tokenId: number): Promise<CertificateDet
   };
 };
 
+export interface MintResult {
+  txHash: string;
+  tokenId: number;
+}
+
 export const mintCertificate = async (
   recipient: string,
   studentName: string,
   degree: string,
   university: string,
   certificateURI: string
-): Promise<string> => {
+): Promise<MintResult> => {
   const contract = await getContract(true);
   const tx = await contract.mintCertificate(
     recipient,
@@ -278,8 +283,32 @@ export const mintCertificate = async (
     certificateURI
   );
   
-  await tx.wait();
-  return tx.hash;
+  const receipt = await tx.wait();
+  
+  // Extract tokenId from the CertificateMinted event
+  let tokenId: number = 0;
+  
+  for (const log of receipt.logs) {
+    try {
+      const parsedLog = contract.interface.parseLog({
+        topics: log.topics as string[],
+        data: log.data,
+      });
+      
+      if (parsedLog && parsedLog.name === 'CertificateMinted') {
+        tokenId = Number(parsedLog.args.tokenId);
+        break;
+      }
+    } catch {
+      // Skip logs that don't match our contract events
+      continue;
+    }
+  }
+  
+  return {
+    txHash: tx.hash,
+    tokenId,
+  };
 };
 
 export const emergencyStop = async (): Promise<string> => {
